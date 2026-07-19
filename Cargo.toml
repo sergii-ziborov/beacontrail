@@ -28,7 +28,7 @@ anyhow = "1"
 # Native Windows access — the whole "no C#, no PowerShell" thesis lives here.
 # windows-rs calls wlanapi.dll (and later wevtapi/iphlpapi) directly as typed FFI.
 [target.'cfg(windows)'.dependencies.windows]
-version = "0.58"
+version = "0.62"
 features = [
     "Win32_Foundation",
     "Win32_NetworkManagement_WiFi",

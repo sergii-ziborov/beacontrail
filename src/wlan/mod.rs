@@ -7,10 +7,7 @@
 //! (`WlanOpenHandle` / `WlanEnumInterfaces` / `WlanQueryInterface`) directly
 //! as typed FFI — no shell, no .NET, no runtime code generation.
 //!
-//! NOTE: written before the Rust toolchain was available on this machine, so it
-//! has not been compiled yet. `windows-rs` signature details (notably whether
-//! the WLAN functions return `WIN32_ERROR` — a newtype over `u32` — or a bare
-//! `u32`) are the expected first-build fix-up surface; see the `.0` comments.
+//! Verified against `windows` 0.62 on `stable-x86_64-pc-windows-*`.
 
 use serde::Serialize;
 use windows::core::GUID;
@@ -20,6 +17,8 @@ use windows::Win32::NetworkManagement::WiFi::{
     wlan_intf_opcode_current_connection, DOT11_SSID, WLAN_API_VERSION_2_0,
     WLAN_CONNECTION_ATTRIBUTES, WLAN_INTERFACE_INFO_LIST,
 };
+
+pub mod bss;
 
 /// RAII owner of the WLAN client handle.
 struct WlanClient {
@@ -33,10 +32,10 @@ impl WlanClient {
         let ret = unsafe {
             WlanOpenHandle(WLAN_API_VERSION_2_0, None, &mut negotiated, &mut handle)
         };
-        // `ret` is `WIN32_ERROR` (newtype over u32) in current windows-rs. If your
-        // pinned windows version returns a bare `u32`, drop the `.0` here and below.
-        if ret.0 != 0 {
-            anyhow::bail!("WlanOpenHandle failed (code {})", ret.0);
+        // windows-rs 0.62 types the WLAN returns as a bare `u32` Win32 error code
+        // (not the `WIN32_ERROR` newtype used elsewhere in the bindings).
+        if ret != 0 {
+            anyhow::bail!("WlanOpenHandle failed (code {ret})");
         }
         Ok(Self { handle })
     }
@@ -77,6 +76,29 @@ pub struct WifiStatus {
     pub connection: Option<CurrentConnection>,
 }
 
+/// Collect the GUID of every WLAN interface on the machine.
+fn interface_guids(client: &WlanClient) -> anyhow::Result<Vec<GUID>> {
+    unsafe {
+        let mut list_ptr: *mut WLAN_INTERFACE_INFO_LIST = std::ptr::null_mut();
+        let ret = WlanEnumInterfaces(client.handle, None, &mut list_ptr);
+        if ret != 0 || list_ptr.is_null() {
+            anyhow::bail!("WlanEnumInterfaces failed (code {ret})");
+        }
+
+        let list = &*list_ptr;
+        let guids = std::slice::from_raw_parts(
+            list.InterfaceInfo.as_ptr(),
+            list.dwNumberOfItems as usize,
+        )
+        .iter()
+        .map(|info| info.InterfaceGuid)
+        .collect();
+
+        WlanFreeMemory(list_ptr as *const core::ffi::c_void);
+        Ok(guids)
+    }
+}
+
 /// Enumerate every WLAN interface and, for each, its current connection (if any).
 pub fn wifi_status() -> anyhow::Result<Vec<WifiStatus>> {
     let client = WlanClient::open()?;
@@ -85,8 +107,8 @@ pub fn wifi_status() -> anyhow::Result<Vec<WifiStatus>> {
     unsafe {
         let mut list_ptr: *mut WLAN_INTERFACE_INFO_LIST = std::ptr::null_mut();
         let ret = WlanEnumInterfaces(client.handle, None, &mut list_ptr);
-        if ret.0 != 0 || list_ptr.is_null() {
-            anyhow::bail!("WlanEnumInterfaces failed (code {})", ret.0);
+        if ret != 0 || list_ptr.is_null() {
+            anyhow::bail!("WlanEnumInterfaces failed (code {ret})");
         }
 
         let list = &*list_ptr;
@@ -133,7 +155,7 @@ unsafe fn query_current_connection(
         &mut data_ptr,
         None,
     );
-    if ret.0 != 0 || data_ptr.is_null() {
+    if ret != 0 || data_ptr.is_null() {
         return Ok(None);
     }
 

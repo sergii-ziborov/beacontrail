@@ -11,7 +11,7 @@
 use std::ffi::c_void;
 use std::sync::OnceLock;
 
-use crate::wlan::sys::{load_system_library, symbol};
+use crate::dll::{load_system_library, symbol};
 
 // EVT_QUERY_FLAGS.
 const EVT_QUERY_CHANNEL_PATH: u32 = 0x1;

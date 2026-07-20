@@ -8,8 +8,11 @@
 
 use serde::Serialize;
 
+#[cfg(feature = "analyze")]
 pub mod analyze;
+#[cfg(feature = "scan")]
 pub mod bss;
+#[cfg(feature = "sample")]
 pub mod sample;
 pub mod sys;
 
@@ -80,6 +83,7 @@ pub struct WifiStatus {
 }
 
 /// Collect the GUID of every WLAN interface on the machine.
+#[cfg(feature = "scan")]
 pub(crate) fn interface_guids(client: &WlanClient) -> anyhow::Result<Vec<Guid>> {
     let api = sys::api()?;
 

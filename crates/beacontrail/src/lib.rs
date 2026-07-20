@@ -31,10 +31,24 @@
 //! counterpart on Linux or macOS. Callers must treat it as an optional
 //! capability rather than assuming it exists.
 
+//! # Selecting capabilities
+//!
+//! Features are granular so an embedded target compiles only what it calls:
+//!
+//! ```toml
+//! beacontrail = { version = "0.2", default-features = false, features = ["status"] }
+//! ```
+//!
+//! `status` (association state) · `scan` (BSS list + IE parsing) · `analyze`
+//! (findings) · `sample` (dynamics over a window) · `history` (event log).
+
 pub mod time;
 
-#[cfg(all(windows, feature = "platform"))]
+#[cfg(windows)]
+mod dll;
+
+#[cfg(all(windows, feature = "history"))]
 pub mod events;
 
-#[cfg(all(windows, feature = "platform"))]
+#[cfg(all(windows, feature = "status"))]
 pub mod wlan;

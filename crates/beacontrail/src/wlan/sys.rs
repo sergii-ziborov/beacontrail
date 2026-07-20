@@ -15,8 +15,10 @@
 //! Struct layouts mirror `wlanapi.h` exactly; `#[repr(C)]` gives them the same
 //! field order, alignment and padding the C compiler produces.
 
-use std::ffi::{c_char, c_void};
+use std::ffi::c_void;
 use std::sync::OnceLock;
+
+use crate::dll::{load_system_library, symbol};
 
 pub type Handle = *mut c_void;
 
@@ -160,37 +162,8 @@ type WlanScanFn = unsafe extern "system" fn(
 ) -> u32;
 type WlanFreeMemoryFn = unsafe extern "system" fn(*mut c_void);
 
-#[link(name = "kernel32")]
-extern "system" {
-    fn LoadLibraryW(file_name: *const u16) -> *mut c_void;
-    fn GetProcAddress(module: *mut c_void, proc_name: *const c_char) -> *mut c_void;
-}
-
-/// Load a system DLL by name, or `None` if it is unavailable.
-///
-/// Shared with the event-log module: `wevtapi` has no import library in the
-/// toolchain either, so it is resolved the same way.
-pub(crate) fn load_system_library(name: &str) -> Option<*mut c_void> {
-    let wide: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
-    let module = unsafe { LoadLibraryW(wide.as_ptr()) };
-
-    if module.is_null() {
-        None
-    } else {
-        Some(module)
-    }
-}
-
-/// Resolve an exported symbol. `name` must be NUL-terminated ANSI.
-pub(crate) fn symbol(module: *mut c_void, name: &std::ffi::CStr) -> Option<*mut c_void> {
-    let ptr = unsafe { GetProcAddress(module, name.as_ptr()) };
-
-    if ptr.is_null() {
-        None
-    } else {
-        Some(ptr)
-    }
-}
+// Runtime DLL resolution lives in `crate::dll`, shared with the event-log
+// module: `wevtapi` has no import library in the toolchain either.
 
 /// The subset of `wlanapi.dll` BeaconTrail uses, resolved once at first call.
 pub struct WlanApi {
@@ -216,23 +189,14 @@ pub fn api() -> anyhow::Result<&'static WlanApi> {
 }
 
 unsafe fn load() -> Option<WlanApi> {
-    // UTF-16, NUL-terminated, as LoadLibraryW requires.
-    let name: Vec<u16> = "wlanapi.dll\0".encode_utf16().collect();
-    let module = LoadLibraryW(name.as_ptr());
-    if module.is_null() {
-        return None;
-    }
+    let module = load_system_library("wlanapi.dll")?;
 
     // The target type is spelled out at every call site: an implicit transmute
     // to a function pointer is exactly the kind of thing that should never be
     // inferred.
     macro_rules! sym {
         ($name:literal, $ty:ty) => {{
-            let ptr = GetProcAddress(module, $name.as_ptr());
-            if ptr.is_null() {
-                return None;
-            }
-            std::mem::transmute::<*mut c_void, $ty>(ptr)
+            std::mem::transmute::<*mut c_void, $ty>(symbol(module, $name)?)
         }};
     }
 

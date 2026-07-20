@@ -15,10 +15,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # rust-toolchain.toml pins the GNU toolchain; rustup honours it here too,
-      # which keeps CI on the same self-sufficient setup as a developer machine.
-      - name: Show toolchain
-        run: rustup show
+      # Build on the GNU toolchain, matching a developer machine that has no
+      # Visual C++ build tools. windows-latest ships MSVC, but relying on it
+      # would let an MSVC-only regression slip through unnoticed.
+      - name: Use the GNU toolchain
+        run: |
+          rustup toolchain install stable-x86_64-pc-windows-gnu --component clippy,rustfmt
+          rustup default stable-x86_64-pc-windows-gnu
+          rustup show
 
       - uses: Swatinem/rust-cache@v2
 

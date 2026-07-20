@@ -51,14 +51,25 @@ Release binary: **~310 KB**. Runtime requirements on the target machine: none.
 ## Build
 
 Needs nothing but [rustup](https://rustup.rs). No Visual C++ build tools, no
-Windows SDK, no mingw, no administrator rights — `rust-toolchain.toml` pins the
-self-sufficient GNU toolchain.
+Windows SDK, no mingw, no administrator rights.
+
+The GNU toolchain is self-sufficient — it ships its own linker — so on a machine
+without Visual Studio, select it once:
+
+```powershell
+rustup default stable-x86_64-pc-windows-gnu
+```
+
+Then:
 
 ```powershell
 cargo test                  # unit tests
 cargo build --release       # target\release\beacontrail.exe
 cargo run --example probe   # human-readable dump against the real adapter
 ```
+
+The MSVC toolchain works too if you already have the Visual C++ build tools; CI
+builds on GNU so that an MSVC-only assumption cannot creep in unnoticed.
 
 ## Use it with an MCP client
 

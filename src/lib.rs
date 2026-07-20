@@ -10,6 +10,9 @@
 //! - [`mcp`] — the read-only Model Context Protocol tool surface
 
 #[cfg(windows)]
+pub mod events;
+
+#[cfg(windows)]
 pub mod mcp;
 
 #[cfg(windows)]

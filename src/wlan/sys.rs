@@ -166,6 +166,32 @@ extern "system" {
     fn GetProcAddress(module: *mut c_void, proc_name: *const c_char) -> *mut c_void;
 }
 
+/// Load a system DLL by name, or `None` if it is unavailable.
+///
+/// Shared with the event-log module: `wevtapi` has no import library in the
+/// toolchain either, so it is resolved the same way.
+pub(crate) fn load_system_library(name: &str) -> Option<*mut c_void> {
+    let wide: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
+    let module = unsafe { LoadLibraryW(wide.as_ptr()) };
+
+    if module.is_null() {
+        None
+    } else {
+        Some(module)
+    }
+}
+
+/// Resolve an exported symbol. `name` must be NUL-terminated ANSI.
+pub(crate) fn symbol(module: *mut c_void, name: &std::ffi::CStr) -> Option<*mut c_void> {
+    let ptr = unsafe { GetProcAddress(module, name.as_ptr()) };
+
+    if ptr.is_null() {
+        None
+    } else {
+        Some(ptr)
+    }
+}
+
 /// The subset of `wlanapi.dll` BeaconTrail uses, resolved once at first call.
 pub struct WlanApi {
     pub open_handle: WlanOpenHandleFn,

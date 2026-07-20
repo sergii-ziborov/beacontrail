@@ -204,6 +204,33 @@ fn tool_definitions() -> Value {
             }
         },
         {
+            "name": "wifi_history",
+            "description": "Read the Windows WLAN AutoConfig event log and return a verdict: \
+                            reconnect loops, an access point repeatedly failing key exchange, and \
+                            suspected credential mismatch. This is the tool that answers 'why did it \
+                            drop earlier' — a current-state reading cannot. Roams and rekeys are \
+                            deliberately excluded: they are the highest-volume events in this log and \
+                            are almost always benign. Read-only.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "within_seconds": {
+                        "type": "integer",
+                        "description": "How far back to look. Default 3600."
+                    },
+                    "max_events": {
+                        "type": "integer",
+                        "description": "Cap on events read. Default 200, hard limit 2000."
+                    },
+                    "include_events": {
+                        "type": "boolean",
+                        "description": "Also return the raw decoded events. Off by default — the \
+                                        verdict is the useful part and the raw list is large."
+                    }
+                }
+            }
+        },
+        {
             "name": "wifi_sample",
             "description": "Sample the current association over a bounded window and return both the \
                             series and the aggregates a single snapshot cannot show: RSSI min/max/mean \
@@ -357,6 +384,32 @@ fn call_tool(params: &Value) -> Result<Value, RpcError> {
             .and_then(|count| encode(&json!({ "interfaces_scanning": count }))),
         "wifi_networks" => collect_networks(&arguments).and_then(|v| encode(&v)),
         "wifi_analyze" => analyze_environment(&arguments).and_then(|v| encode(&v)),
+        "wifi_history" => {
+            let within = arguments
+                .get("within_seconds")
+                .and_then(Value::as_u64)
+                .unwrap_or(3600);
+            let max = arguments
+                .get("max_events")
+                .and_then(Value::as_u64)
+                .unwrap_or(200)
+                .min(2000) as usize;
+
+            crate::events::recent(max, Some(within)).and_then(|events| {
+                let verdict = crate::events::detect(&events);
+                let include = arguments
+                    .get("include_events")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+
+                encode(&json!({
+                    "window_seconds": within,
+                    "event_count": events.len(),
+                    "verdict": verdict,
+                    "events": if include { serde_json::to_value(&events)? } else { Value::Null },
+                }))
+            })
+        }
         "wifi_sample" => {
             let duration = arguments
                 .get("duration_seconds")
@@ -505,6 +558,7 @@ mod tests {
                 "wifi_status",
                 "wifi_networks",
                 "wifi_analyze",
+                "wifi_history",
                 "wifi_sample",
                 "wifi_scan"
             ]

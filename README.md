@@ -39,6 +39,14 @@ no Visual C++ build tools.
 | Interface + current connection | `WlanQueryInterface` | `netsh wlan show interfaces` |
 | Nearby BSS list, dBm, IEs | `WlanGetNetworkBssList` | embedded C# `Add-Type` |
 | Scan trigger | `WlanScan` | embedded C# `Add-Type` |
+| Connection history | `wevtapi` (`EvtQuery`/`EvtRender`) | `Get-WinEvent` |
+
+The event-log path is worth a note. `Get-WinEvent` returns a fully-rendered
+**localized** `Message` string, and the predecessor parsed that text — so it
+silently produced nothing on a German or Japanese Windows. `EvtRenderEventXml`
+returns the raw event XML with structured `EventData`, which is locale-invariant
+and needs neither `EvtFormatMessage` nor publisher metadata. Every rule keys on
+numeric codes, never on prose.
 
 The MCP layer is hand-written too: the stdio transport is newline-delimited
 JSON-RPC 2.0, so an SDK that pulls an async runtime, a schema generator and a
@@ -100,6 +108,7 @@ No arguments, no configuration, no environment variables.
 | `wifi_status` | — | Every WLAN interface, its state, and for the associated one: SSID, BSSID, PHY type (`ht`/`vht`/`he`/`eht`), signal quality, estimated RSSI in dBm, rx/tx rates |
 | `wifi_networks` | `refresh_scan?: boolean`<br>`detail?: "summary" \| "full"` | `{count, refreshed, detail, networks}` — nearby BSS entries with SSID, BSSID, band, channel, real RSSI in dBm, PHY type, security and capability flags |
 | `wifi_analyze` | `refresh_scan?: boolean` | **Findings, not records.** Co-channel contention, crowded-channel association, weak signal, band-steering and roam candidates, insecure security, hidden SSIDs, scan-quality problems |
+| `wifi_history` | `within_seconds?: number`<br>`max_events?: number`<br>`include_events?: boolean` | **Why it dropped earlier.** Reads the WLAN AutoConfig event log and returns a verdict: reconnect loops, an AP repeatedly failing key exchange, suspected credential mismatch |
 | `wifi_sample` | `duration_seconds?: 1..120`<br>`interval_ms?: >=250` | Connection dynamics over a window: RSSI min/max/mean and swing, rx-rate range, distinct BSSIDs, roam count, disconnected samples |
 | `wifi_scan` | — | Triggers a driver scan on each interface; returns how many accepted |
 

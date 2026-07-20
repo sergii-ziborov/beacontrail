@@ -19,6 +19,14 @@ use crate::wlan::analyze::Analysis;
 use crate::wlan::bss::BssEntry;
 use crate::wlan::WifiStatus;
 
+/// Seconds since the Unix epoch.
+pub fn now_epoch_seconds() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
 /// Current UTC time as RFC 3339, without pulling in a date library.
 ///
 /// Uses Howard Hinnant's civil-from-days algorithm: the era arithmetic below is

@@ -32,6 +32,9 @@ pub struct InformationElements {
 
 #[derive(Debug, Serialize)]
 pub struct BssEntry {
+    /// Which WLAN interface saw this BSS — machines with more than one radio
+    /// report the same SSID from several of them.
+    pub interface_guid: String,
     pub ssid: Option<String>,
     pub bssid: String,
     pub bss_type: String,
@@ -195,8 +198,9 @@ fn collect_for_interface(
         let entries =
             std::slice::from_raw_parts(list.bss_entries.as_ptr(), list.num_items as usize);
 
+        let interface_guid = super::guid_to_string(guid);
         for entry in entries {
-            out.push(read_entry(entry));
+            out.push(read_entry(entry, &interface_guid));
         }
 
         (api.free_memory)(list_ptr as *mut core::ffi::c_void);
@@ -208,7 +212,7 @@ fn collect_for_interface(
 /// # Safety
 /// `entry` must point into a live `WLAN_BSS_LIST` allocation, because the IE
 /// bytes live at `entry + ie_offset` inside that same allocation.
-unsafe fn read_entry(entry: &WlanBssEntry) -> BssEntry {
+unsafe fn read_entry(entry: &WlanBssEntry, interface_guid: &str) -> BssEntry {
     let base = entry as *const WlanBssEntry as *const u8;
 
     // Bound the IE blob defensively: a malformed or hostile beacon must not turn
@@ -222,6 +226,7 @@ unsafe fn read_entry(entry: &WlanBssEntry) -> BssEntry {
     let (band, channel) = band_and_channel(entry.ch_center_frequency);
 
     BssEntry {
+        interface_guid: interface_guid.to_string(),
         ssid: ssid_to_string(&entry.dot11_ssid),
         bssid: mac_to_string(&entry.dot11_bssid),
         bss_type: bss_type(entry.dot11_bss_type),
@@ -540,6 +545,7 @@ mod tests {
     fn sample_entry(information_elements: InformationElements) -> BssEntry {
         let (band, channel) = band_and_channel(5_180_000);
         BssEntry {
+            interface_guid: "00000000-0000-0000-0000-000000000000".into(),
             ssid: Some("Net".into()),
             bssid: "aa:bb:cc:dd:ee:ff".into(),
             bss_type: "infrastructure".into(),

@@ -8,6 +8,7 @@
 
 use serde::Serialize;
 
+pub mod analyze;
 pub mod bss;
 pub mod sample;
 pub mod sys;

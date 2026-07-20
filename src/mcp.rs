@@ -164,6 +164,26 @@ fn tool_definitions() -> Value {
             }
         },
         {
+            "name": "wifi_analyze",
+            "description": "Diagnose the radio environment and return findings rather than records: \
+                            co-channel contention, whether the associated AP sits on a crowded channel, \
+                            weak signal, a stronger band or nearer AP carrying the same SSID, insecure \
+                            or legacy security, hidden SSIDs, and scan-quality problems. Prefer this \
+                            over wifi_networks when the question is 'what is wrong' rather than 'what \
+                            is there'. Every finding carries a `caveat` stating why it may be wrong — \
+                            read it before repeating the conclusion. Read-only.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "refresh_scan": {
+                        "type": "boolean",
+                        "description": "Force a fresh driver scan and wait ~4s first. Recommended, \
+                                        since findings computed over a stale cache are unreliable."
+                    }
+                }
+            }
+        },
+        {
             "name": "wifi_sample",
             "description": "Sample the current association over a bounded window and return both the \
                             series and the aggregates a single snapshot cannot show: RSSI min/max/mean \
@@ -214,6 +234,7 @@ fn call_tool(params: &Value) -> Result<Value, RpcError> {
         "wifi_scan" => wlan::bss::request_scan()
             .and_then(|count| encode(&json!({ "interfaces_scanning": count }))),
         "wifi_networks" => collect_networks(&arguments).and_then(|v| encode(&v)),
+        "wifi_analyze" => analyze_environment(&arguments).and_then(|v| encode(&v)),
         "wifi_sample" => {
             let duration = arguments
                 .get("duration_seconds")
@@ -288,6 +309,26 @@ fn collect_networks(arguments: &Value) -> anyhow::Result<Value> {
     }))
 }
 
+/// Reduce the environment to findings rather than records.
+fn analyze_environment(arguments: &Value) -> anyhow::Result<Value> {
+    if arguments
+        .get("refresh_scan")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        let _ = wlan::bss::request_scan();
+        std::thread::sleep(SCAN_SETTLE);
+    }
+
+    let entries = wlan::bss::bss_list()?;
+    let status = wlan::wifi_status().unwrap_or_default();
+    let connection = status.iter().find_map(|entry| entry.connection.as_ref());
+
+    Ok(serde_json::to_value(wlan::analyze::analyze(
+        &entries, connection,
+    ))?)
+}
+
 /// Compact, not pretty-printed: these payloads go into a model's context, where
 /// indentation is pure token cost. The BSS list roughly halves.
 fn encode<T: Serialize>(value: &T) -> anyhow::Result<String> {
@@ -338,7 +379,13 @@ mod tests {
         // mode this test exists to catch.
         assert_eq!(
             names,
-            vec!["wifi_status", "wifi_networks", "wifi_sample", "wifi_scan"]
+            vec![
+                "wifi_status",
+                "wifi_networks",
+                "wifi_analyze",
+                "wifi_sample",
+                "wifi_scan"
+            ]
         );
 
         // Nothing that reads secrets or mutates the adapter may ever appear here.

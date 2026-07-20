@@ -99,9 +99,23 @@ No arguments, no configuration, no environment variables.
 |---|---|---|
 | `wifi_status` | — | Every WLAN interface, its state, and for the associated one: SSID, BSSID, PHY type (`ht`/`vht`/`he`/`eht`), signal quality, estimated RSSI in dBm, rx/tx rates |
 | `wifi_networks` | `refresh_scan?: boolean`<br>`detail?: "summary" \| "full"` | `{count, refreshed, detail, networks}` — nearby BSS entries with SSID, BSSID, band, channel, real RSSI in dBm, PHY type, security and capability flags |
+| `wifi_analyze` | `refresh_scan?: boolean` | **Findings, not records.** Co-channel contention, crowded-channel association, weak signal, band-steering and roam candidates, insecure security, hidden SSIDs, scan-quality problems |
+| `wifi_sample` | `duration_seconds?: 1..120`<br>`interval_ms?: >=250` | Connection dynamics over a window: RSSI min/max/mean and swing, rx-rate range, distinct BSSIDs, roam count, disconnected samples |
 | `wifi_scan` | — | Triggers a driver scan on each interface; returns how many accepted |
 
-All three are read-only.
+All five are read-only.
+
+**Prefer `wifi_analyze`.** On a real 43-BSS environment it answers in 802 bytes
+where the full BSS list costs 41 KB — a 98% reduction — because it returns the
+conclusion instead of the evidence. Every finding carries a `caveat` field
+stating why it might be wrong; that is part of the payload on purpose, since a
+bare severity invites over-trust and several of these signals are genuinely
+weaker than they look. RSSI, for instance, is reconstructed by most Windows
+drivers from a 0..100 quality scale, so a reported −71 dBm may be anywhere in
+−69..−73.
+
+`wifi_sample` answers a different question: not "what is the state" but "is it
+stable". A mean of −65 dBm looks fine until you see the 40 dB swing behind it.
 
 Two behaviours worth knowing about `wifi_networks`:
 

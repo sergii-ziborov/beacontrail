@@ -12,7 +12,7 @@ One engine, four surfaces:
 |---|---|---|
 | `radiochron` — Rust library | this repo | IoT agents, exporters, CLIs — anything embedding collectors, analysis and the chronicle recorder |
 | `radiochron-mcp` — MCP server | this repo | AI assistants: six read-only tools + resources over stdio |
-| `radiochron` — npm package | **planned** | Node.js apps, via napi-rs prebuilt binaries — no Rust toolchain on the consumer's machine (name verified free) |
+| `radiochron` — npm package | in this repo (`npm/`), **publish pending** | one-line MCP install for any client — ships the prebuilt server binary, no Rust toolchain on the consumer's machine |
 | [`radiochron-electron`](https://github.com/sergii-ziborov/radiochron-electron) — desktop | separate repo | evidence timelines and network inventory on the same engine |
 
 > Early release, Windows-first. The collectors are verified on real hardware;
@@ -203,7 +203,7 @@ model. They are not part of this server's tool surface, and calling them returns
 
 Measured on an Intel Wi-Fi 6E AX211 in a dense office environment:
 
-- 64 unit tests green, including C-ABI struct layout assertions
+- 74 unit tests green, including C-ABI struct layout assertions
 - `wifi_status` — connected, `phy=he`, −58 dBm, 649/432 Mbps
 - `wifi_networks` — up to **58 BSS** across 2.4, 5 and 6 GHz; RSSI −91..−54 dBm;
   band and channel resolved for every entry; IE blobs 100–384 bytes
@@ -222,9 +222,17 @@ WPA detection has been seen firing on real hardware but is environment-dependent
 
 ## Roadmap
 
-- WLAN AutoConfig event timeline via `wevtapi` (reconnect-loop detection)
-- Baseline runs, run comparison and evidence reports over SQLite
-- IP configuration via `GetAdaptersAddresses`
+Shipped so far: native WLAN collectors, 802.11 IE analysis, event-log verdicts,
+the chronicle recorder and the MCP server — verified on real hardware. Next:
+
+- **Cellular collectors** — RSRP/RSRQ/SINR via Windows MBN and Linux
+  ModemManager; for a field device the radio that matters may not be Wi-Fi
+- **Linux via nl80211** — raw IEs straight from the kernel, richer than Windows
+- **npm bindings via napi-rs** prebuilds, plus the crates.io / npm publishes
+- **macOS via CoreWLAN** — honestly less: the public API hides BSSIDs behind a
+  location permission and exposes no raw IEs
+
+See the full [roadmap](https://radiochron.com/#roadmap).
 
 ## Safety and privacy
 

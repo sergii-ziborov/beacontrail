@@ -13,6 +13,11 @@ const { join } = require('node:path');
 const source = join(__dirname, '..', 'target', 'release', 'radiochron.exe');
 const target = join(__dirname, 'radiochron.exe');
 
+// The dual license rides along with the tarball.
+for (const name of ['LICENSE-MIT', 'LICENSE-APACHE']) {
+  copyFileSync(join(__dirname, '..', name), join(__dirname, name));
+}
+
 let size;
 try {
   size = statSync(source).size;

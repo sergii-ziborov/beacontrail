@@ -29,4 +29,4 @@ log directly. Linux (nl80211) and macOS (CoreWLAN) are on the
 [roadmap](https://radiochron.com/#roadmap), as are napi-rs bindings for
 importing the library from Node.js.
 
-MIT · [source](https://github.com/sergii-ziborov/radiochron)
+MIT OR Apache-2.0, at your option · [source](https://github.com/sergii-ziborov/radiochron)

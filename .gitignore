@@ -23,3 +23,5 @@ Desktop.ini
 # npm launcher package build artifacts - the engine is bundled at publish time
 /npm/radiochron.exe
 /npm/*.tgz
+/npm/LICENSE-MIT
+/npm/LICENSE-APACHE

@@ -1,4 +1,4 @@
-# BeaconTrail
+# RadioChron
 
 Local-first Windows Wi-Fi diagnostics as a **Model Context Protocol (MCP)
 server**. Pure Rust — no PowerShell, no `netsh` text scraping, no embedded C#,
@@ -14,11 +14,16 @@ straight from beacon frames.
 ## Why
 
 Intermittent Wi-Fi failures are hard to explain once the connection recovers.
-BeaconTrail exposes what Windows already knows — interface state, nearby BSSIDs
+RadioChron exposes what Windows already knows — interface state, nearby BSSIDs
 with real signal strength, security posture — through a protocol an assistant
 can drive directly. No screenshots, no copy-pasted `netsh` output.
 
-Wi-Fi APs broadcast **beacon** frames; BeaconTrail keeps the **trail**.
+A snapshot says the link is fine right now. RadioChron keeps the **chronicle** —
+what the radio did over time — which is the only thing that can answer why it
+was not fine ten minutes ago.
+
+The name is deliberately not Wi-Fi-specific: cellular collectors are the planned
+next domain, and for a device in the field the radio that matters may be either.
 
 ## The pure-Rust thesis
 
@@ -28,7 +33,7 @@ scan. Each data path therefore depended on `powershell.exe` plus the .NET CSC
 compiler, paid a cold-compile cost, parsed locale-dependent English text, and
 tripped AV/WDAC on exactly the managed corporate machines it targeted.
 
-BeaconTrail calls the same Win32 APIs through hand-written FFI. It does not
+RadioChron calls the same Win32 APIs through hand-written FFI. It does not
 depend on the `windows` crate either: seven `wlanapi.dll` entry points and a
 handful of `#[repr(C)]` structs are declared directly, and the DLL is resolved
 at run time via `LoadLibraryW`. No import library, no `raw-dylib`, no `dlltool`,
@@ -53,8 +58,14 @@ JSON-RPC 2.0, so an SDK that pulls an async runtime, a schema generator and a
 mandatory `chrono` (whose `clock` feature drags in `windows-link`/`raw-dylib`)
 would have reintroduced the exact build requirement this project avoids.
 
-**Total dependency count: three** — `serde`, `serde_json`, `anyhow`.
-Release binary: **~310 KB**. Runtime requirements on the target machine: none.
+**Total dependency count: three** — `serde`, `serde_json`, `anyhow`, for a
+13-crate tree including transitive dependencies. Release binary: **~724 KB**.
+Runtime requirements on the target machine: none.
+
+For comparison, the nearest equivalent crate resolves to **51 crates** and does
+not build on a stock `rustup` toolchain at all — its transitive dependencies
+require mingw or the Visual C++ build tools. On an embedded target that is the
+difference between adding a dependency and rebuilding the image.
 
 ## Build
 
@@ -72,7 +83,7 @@ Then:
 
 ```powershell
 cargo test                  # unit tests
-cargo build --release       # target\release\beacontrail.exe
+cargo build --release       # target\release\radiochron.exe
 cargo run --example probe   # human-readable dump against the real adapter
 ```
 
@@ -84,7 +95,7 @@ builds on GNU so that an MSVC-only assumption cannot creep in unnoticed.
 Register the binary. For Claude Code:
 
 ```powershell
-claude mcp add beacontrail -- "C:\path\to\beacontrail.exe"
+claude mcp add radiochron -- "C:\path\to\radiochron.exe"
 ```
 
 Or add it to a client config directly:
@@ -92,8 +103,8 @@ Or add it to a client config directly:
 ```json
 {
   "mcpServers": {
-    "beacontrail": {
-      "command": "C:\\path\\to\\beacontrail.exe"
+    "radiochron": {
+      "command": "C:\\path\\to\\radiochron.exe"
     }
   }
 }
@@ -112,7 +123,7 @@ No arguments, no configuration, no environment variables.
 | `wifi_sample` | `duration_seconds?: 1..120`<br>`interval_ms?: >=250` | Connection dynamics over a window: RSSI min/max/mean and swing, rx-rate range, distinct BSSIDs, roam count, disconnected samples |
 | `wifi_scan` | — | Triggers a driver scan on each interface; returns how many accepted |
 
-All five are read-only.
+All six are read-only.
 
 **Prefer `wifi_analyze`.** On a real 43-BSS environment it answers in 802 bytes
 where the full BSS list costs 41 KB — a 98% reduction — because it returns the
@@ -151,7 +162,7 @@ model. They are not part of this server's tool surface, and calling them returns
 
 Measured on an Intel Wi-Fi 6E AX211 in a dense office environment:
 
-- 25/25 unit tests green, including C-ABI struct layout assertions
+- 64 unit tests green, including C-ABI struct layout assertions
 - `wifi_status` — connected, `phy=he`, −58 dBm, 649/432 Mbps
 - `wifi_networks` — up to **58 BSS** across 2.4, 5 and 6 GHz; RSSI −91..−54 dBm;
   band and channel resolved for every entry; IE blobs 100–384 bytes
@@ -176,7 +187,7 @@ WPA detection has been seen firing on real hardware but is environment-dependent
 
 ## Safety and privacy
 
-SSIDs, BSSIDs, MAC addresses and event logs are sensitive. BeaconTrail is
+SSIDs, BSSIDs, MAC addresses and event logs are sensitive. RadioChron is
 local-first, has no telemetry, and transmits nothing off the machine. Only run
 scans against networks you own or are authorized to test. This is not a packet
 sniffer, a geolocation system, or offensive Wi-Fi tooling.

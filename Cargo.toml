@@ -1,8 +1,8 @@
-# BeaconTrail is two crates, not one, because they have different audiences.
+# RadioChron is two crates, not one, because they have different audiences.
 #
-#   beacontrail      — the library. Collectors and 802.11 analysis. What an IoT
+#   radiochron      — the library. Collectors and 802.11 analysis. What an IoT
 #                      agent, a CLI, an exporter or a WASM analyser imports.
-#   beacontrail-mcp  — the Model Context Protocol server built on it. A product,
+#   radiochron-mcp  — the Model Context Protocol server built on it. A product,
 #                      not a library.
 #
 # They live in one repository on purpose: the server is a thin shell over the
@@ -11,7 +11,7 @@
 
 [workspace]
 resolver = "2"
-members = ["crates/beacontrail", "crates/beacontrail-mcp"]
+members = ["crates/radiochron", "crates/radiochron-mcp"]
 
 [workspace.package]
 version = "0.2.0"
@@ -19,7 +19,7 @@ edition = "2021"
 rust-version = "1.78"
 authors = ["Sergii Ziborov"]
 license = "MIT"
-repository = "https://github.com/sergii-ziborov/beacontrail"
+repository = "https://github.com/sergii-ziborov/radiochron"
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }

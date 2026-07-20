@@ -1,6 +1,6 @@
-//! BeaconTrail MCP server.
+//! RadioChron MCP server.
 //!
-//! A thin transport shell over the `beacontrail` library: this crate owns the
+//! A thin transport shell over the `radiochron` library: this crate owns the
 //! protocol and the report rendering, and nothing else. All collection and
 //! analysis lives in the library, so an IoT agent or a CLI can use the same
 //! engine without dragging JSON-RPC along.
@@ -24,5 +24,5 @@ fn main() -> anyhow::Result<()> {
 
 #[cfg(not(windows))]
 fn main() -> anyhow::Result<()> {
-    anyhow::bail!("BeaconTrail requires Windows (it talks to wlanapi.dll).")
+    anyhow::bail!("RadioChron requires Windows (it talks to wlanapi.dll).")
 }

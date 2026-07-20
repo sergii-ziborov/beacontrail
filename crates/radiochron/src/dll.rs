@@ -57,12 +57,12 @@ mod tests {
 
     #[test]
     fn a_missing_library_is_none_rather_than_a_panic() {
-        assert!(load_system_library("beacontrail-no-such-library.dll").is_none());
+        assert!(load_system_library("radiochron-no-such-library.dll").is_none());
     }
 
     #[test]
     fn a_missing_symbol_is_none() {
         let module = load_system_library("kernel32.dll").unwrap();
-        assert!(symbol(module, c"BeaconTrailNoSuchExport").is_none());
+        assert!(symbol(module, c"RadioChronNoSuchExport").is_none());
     }
 }

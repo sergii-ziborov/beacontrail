@@ -8,7 +8,7 @@
 
 #[cfg(windows)]
 fn main() -> anyhow::Result<()> {
-    use beacontrail::wlan;
+    use radiochron::wlan;
 
     println!("== interfaces & current connection ==");
     println!("{}", serde_json::to_string_pretty(&wlan::wifi_status()?)?);
@@ -64,5 +64,5 @@ fn main() -> anyhow::Result<()> {
 
 #[cfg(not(windows))]
 fn main() -> anyhow::Result<()> {
-    anyhow::bail!("BeaconTrail requires Windows (it talks to wlanapi.dll).")
+    anyhow::bail!("RadioChron requires Windows (it talks to wlanapi.dll).")
 }

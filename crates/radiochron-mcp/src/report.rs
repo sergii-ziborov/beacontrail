@@ -14,10 +14,10 @@ use std::fmt::Write as _;
 
 use serde_json::{json, Value};
 
-use beacontrail::time::now_iso8601;
-use beacontrail::wlan::analyze::Analysis;
-use beacontrail::wlan::bss::BssEntry;
-use beacontrail::wlan::WifiStatus;
+use radiochron::time::now_iso8601;
+use radiochron::wlan::analyze::Analysis;
+use radiochron::wlan::bss::BssEntry;
+use radiochron::wlan::WifiStatus;
 
 /// Render the report as Markdown.
 pub fn markdown(status: &[WifiStatus], entries: &[BssEntry], analysis: &Analysis) -> String {
@@ -142,5 +142,5 @@ pub fn json(status: &[WifiStatus], entries: &[BssEntry], analysis: &Analysis) ->
     })
 }
 
-// Calendar arithmetic and its tests moved to `beacontrail::time`, where the
+// Calendar arithmetic and its tests moved to `radiochron::time`, where the
 // event-log parser shares them.

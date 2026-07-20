@@ -1,5 +1,5 @@
 [package]
-name = "beacontrail"
+name = "radiochron"
 description = "Wi-Fi diagnostics library: native WLAN collectors and 802.11 beacon analysis. No shell-outs, no runtime code generation, and no build toolchain beyond rustup."
 keywords = ["wifi", "wlan", "802-11", "diagnostics", "network"]
 categories = ["network-programming", "os::windows-apis"]
@@ -29,7 +29,7 @@ default = ["status", "scan", "analyze", "sample", "history"]
 # compile what it will never call. A sensor that only needs to know whether it
 # is associated and how strong the link is takes `status` and nothing else.
 #
-#   beacontrail = { version = "0.2", default-features = false, features = ["status"] }
+#   radiochron = { version = "0.2", default-features = false, features = ["status"] }
 
 # Current association: interface enumeration and connection attributes.
 status = []

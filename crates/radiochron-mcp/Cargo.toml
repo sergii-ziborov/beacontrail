@@ -1,5 +1,5 @@
 [package]
-name = "beacontrail-mcp"
+name = "radiochron-mcp"
 description = "Model Context Protocol server exposing local Wi-Fi diagnostics over stdio. Pure Rust, no SDK, three dependencies."
 keywords = ["mcp", "wifi", "wlan", "diagnostics", "model-context-protocol"]
 categories = ["command-line-utilities", "network-programming"]
@@ -10,14 +10,14 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 
-# The crate is beacontrail-mcp; the binary users install stays `beacontrail`.
-# A `beacontrail-mcp.exe` in a client config reads as internal plumbing.
+# The crate is radiochron-mcp; the binary users install stays `radiochron`.
+# A `radiochron-mcp.exe` in a client config reads as internal plumbing.
 [[bin]]
-name = "beacontrail"
+name = "radiochron"
 path = "src/main.rs"
 
 [dependencies]
-beacontrail = { path = "../beacontrail", version = "0.2.0" }
+radiochron = { path = "../radiochron", version = "0.2.0" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }

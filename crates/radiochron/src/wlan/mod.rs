@@ -1,6 +1,6 @@
 //! Native Windows WLAN collectors.
 //!
-//! This module is the whole point of BeaconTrail's "no C#, no PowerShell"
+//! This module is the whole point of RadioChron's "no C#, no PowerShell"
 //! thesis. The predecessor reached `wlanapi.dll` by compiling embedded C# at
 //! runtime through PowerShell `Add-Type`; here we call the same functions
 //! directly through our own FFI declarations (see [`sys`]) — no shell, no .NET,

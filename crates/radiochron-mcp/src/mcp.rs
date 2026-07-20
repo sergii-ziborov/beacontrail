@@ -19,8 +19,8 @@ use std::time::Duration;
 use serde::Serialize;
 use serde_json::{json, Value};
 
-use beacontrail::wlan;
-use beacontrail::wlan::bss::BssSummary;
+use radiochron::wlan;
+use radiochron::wlan::bss::BssSummary;
 
 /// MCP revision this server implements.
 const PROTOCOL_VERSION: &str = "2025-06-18";
@@ -39,10 +39,10 @@ const INTERNAL_ERROR: i64 = -32603;
 /// `isError`, but a resource failure is a real JSON-RPC error.
 const RESOURCE_NOT_FOUND: i64 = -32002;
 
-const URI_REPORT_MD: &str = "beacontrail://report/latest";
-const URI_REPORT_JSON: &str = "beacontrail://report/latest.json";
-const URI_STATUS: &str = "beacontrail://status";
-const URI_NETWORKS: &str = "beacontrail://networks";
+const URI_REPORT_MD: &str = "radiochron://report/latest";
+const URI_REPORT_JSON: &str = "radiochron://report/latest.json";
+const URI_STATUS: &str = "radiochron://status";
+const URI_NETWORKS: &str = "radiochron://networks";
 
 /// Serve MCP on stdin/stdout until the client closes the stream.
 ///
@@ -132,10 +132,10 @@ fn initialize_result() -> Value {
             "resources": { "subscribe": false, "listChanged": false }
         },
         "serverInfo": {
-            "name": "beacontrail",
+            "name": "radiochron",
             "version": env!("CARGO_PKG_VERSION"),
         },
-        "instructions": "BeaconTrail reads local Windows Wi-Fi state directly from the native \
+        "instructions": "RadioChron reads local Windows Wi-Fi state directly from the native \
                          WLAN API. Use wifi_status for the current connection, wifi_networks for \
                          nearby access points with real dBm and 802.11 capability flags, and \
                          wifi_scan to force a refresh. All tools are read-only and Windows-only; \
@@ -395,8 +395,8 @@ fn call_tool(params: &Value) -> Result<Value, RpcError> {
                 .unwrap_or(200)
                 .min(2000) as usize;
 
-            beacontrail::events::recent(max, Some(within)).and_then(|events| {
-                let verdict = beacontrail::events::detect(&events);
+            radiochron::events::recent(max, Some(within)).and_then(|events| {
+                let verdict = radiochron::events::detect(&events);
                 let include = arguments
                     .get("include_events")
                     .and_then(Value::as_bool)
@@ -536,7 +536,7 @@ mod tests {
         let out = response(r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#);
         assert_eq!(out["id"], 1);
         assert_eq!(out["result"]["protocolVersion"], PROTOCOL_VERSION);
-        assert_eq!(out["result"]["serverInfo"]["name"], "beacontrail");
+        assert_eq!(out["result"]["serverInfo"]["name"], "radiochron");
         assert!(out["result"]["capabilities"]["tools"].is_object());
     }
 
@@ -623,7 +623,7 @@ mod tests {
             assert!(resource["uri"]
                 .as_str()
                 .unwrap()
-                .starts_with("beacontrail://"));
+                .starts_with("radiochron://"));
             assert!(resource["name"].is_string());
         }
         // Never paginate a fixed table, and never send a null cursor.
@@ -643,7 +643,7 @@ mod tests {
     #[test]
     fn unknown_resource_uri_is_a_dedicated_error_code() {
         let out = response(
-            r#"{"jsonrpc":"2.0","id":4,"method":"resources/read","params":{"uri":"beacontrail://bogus"}}"#,
+            r#"{"jsonrpc":"2.0","id":4,"method":"resources/read","params":{"uri":"radiochron://bogus"}}"#,
         );
         // -32002, not -32601 and not -32602.
         assert_eq!(out["error"]["code"], RESOURCE_NOT_FOUND);
@@ -653,7 +653,7 @@ mod tests {
     fn a_uri_that_merely_contains_a_known_one_is_rejected() {
         // Guards the exact-match rule: no substring matching, no path joining.
         let out = response(
-            r#"{"jsonrpc":"2.0","id":5,"method":"resources/read","params":{"uri":"beacontrail://report/latest/../evil"}}"#,
+            r#"{"jsonrpc":"2.0","id":5,"method":"resources/read","params":{"uri":"radiochron://report/latest/../evil"}}"#,
         );
         assert_eq!(out["error"]["code"], RESOURCE_NOT_FOUND);
     }

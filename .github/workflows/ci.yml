@@ -43,5 +43,5 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: beacontrail-windows
-          path: target/release/beacontrail.exe
+          name: radiochron-windows
+          path: target/release/radiochron.exe

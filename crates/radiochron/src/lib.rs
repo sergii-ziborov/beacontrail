@@ -1,7 +1,7 @@
 //! Wi-Fi diagnostics: native collectors and 802.11 beacon analysis.
 //!
 //! This is the library. It has no notion of MCP, of JSON-RPC, or of any
-//! transport — that lives in the `beacontrail-mcp` crate, which depends on this
+//! transport — that lives in the `radiochron-mcp` crate, which depends on this
 //! one. An IoT agent, a CLI, a metrics exporter or a fleet-management service
 //! wants this crate and nothing else.
 //!
@@ -36,7 +36,7 @@
 //! Features are granular so an embedded target compiles only what it calls:
 //!
 //! ```toml
-//! beacontrail = { version = "0.2", default-features = false, features = ["status"] }
+//! radiochron = { version = "0.2", default-features = false, features = ["status"] }
 //! ```
 //!
 //! `status` (association state) · `scan` (BSS list + IE parsing) · `analyze`

@@ -165,7 +165,7 @@ type WlanFreeMemoryFn = unsafe extern "system" fn(*mut c_void);
 // Runtime DLL resolution lives in `crate::dll`, shared with the event-log
 // module: `wevtapi` has no import library in the toolchain either.
 
-/// The subset of `wlanapi.dll` BeaconTrail uses, resolved once at first call.
+/// The subset of `wlanapi.dll` RadioChron uses, resolved once at first call.
 pub struct WlanApi {
     pub open_handle: WlanOpenHandleFn,
     pub close_handle: WlanCloseHandleFn,

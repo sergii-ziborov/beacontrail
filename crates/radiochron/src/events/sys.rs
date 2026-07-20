@@ -129,7 +129,7 @@ pub fn query_xml(
         // possible inversion.
         return Err(match last_error() {
             ERROR_ACCESS_DENIED => anyhow::anyhow!(
-                "access denied reading {channel}. Run BeaconTrail elevated to read the WLAN event log."
+                "access denied reading {channel}. Run RadioChron elevated to read the WLAN event log."
             ),
             ERROR_EVT_CHANNEL_NOT_FOUND => {
                 anyhow::anyhow!("event channel not found: {channel}")

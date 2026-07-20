@@ -9,25 +9,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
-name = "beacontrail"
-version = "0.2.0"
-dependencies = [
- "anyhow",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "beacontrail-mcp"
-version = "0.2.0"
-dependencies = [
- "anyhow",
- "beacontrail",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -55,6 +36,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fbf4db142a473a8d80c26bbf18454ed458bf8d26c8219c331daecfdbd079001"
 dependencies = [
  "proc-macro2",
+]
+
+[[package]]
+name = "radiochron"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "radiochron-mcp"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "radiochron",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

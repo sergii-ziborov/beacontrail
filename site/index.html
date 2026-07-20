@@ -95,7 +95,22 @@ nav a:hover{border-color:var(--k)}
 .hero{position:relative;overflow:hidden;padding:60px 24px 84px}
 .hero .wrap{position:relative;z-index:1}
 .hero .sub{font-size:1.12rem;max-width:56ch;margin-top:22px}
-.hero .circ{position:absolute;right:-40px;top:0;height:100%;opacity:.5;z-index:0;pointer-events:none}
+.hero .circ{display:none;position:absolute;right:0;top:0;height:100%;opacity:.55;z-index:0;pointer-events:none}
+@media (min-width:1120px){.hero .circ{display:block;width:min(38vw,520px)}}
+.circ .base{opacity:.3}
+.circ .sig{stroke-dasharray:16 384;animation:trace 5.2s linear infinite}
+.circ .d1{animation-delay:1s}.circ .d2{animation-delay:2s}
+.circ .d3{animation-delay:3s}.circ .d4{animation-delay:4s}
+.circ rect{animation:node 2.6s steps(2,start) infinite}
+.circ rect:nth-child(2n){animation-delay:.65s}
+.circ rect:nth-child(3n){animation-delay:1.3s}
+@keyframes trace{to{stroke-dashoffset:-400}}
+@keyframes node{50%{opacity:.3}}
+.pulse{display:block;width:100%;height:44px;margin-top:28px}
+.pulse .base{opacity:.3}
+.pulse .sig{stroke-dasharray:80 1120;animation:trace2 4.6s linear infinite}
+@keyframes trace2{to{stroke-dashoffset:-1200}}
+@media (prefers-reduced-motion:reduce){.circ .sig,.circ rect,.pulse .sig{animation:none}}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-top:34px}
 .stat{background:var(--k);color:var(--paper);padding:16px 18px}
 .stat b{display:block;font-size:1.65rem;color:var(--y);font-family:var(--mono);letter-spacing:-.03em}
@@ -149,12 +164,19 @@ footer .note{margin-top:30px;font-family:var(--mono);font-size:.76rem;color:var(
 
 <section class="hero">
   <svg class="circ" width="520" height="560" viewBox="0 0 520 560" aria-hidden="true">
-    <g fill="none" stroke="#0D0D08" stroke-width="2">
+    <g fill="none" stroke="#0D0D08" stroke-width="2" class="base">
       <path d="M40 60 H240 L280 100 V240"/>
       <path d="M280 300 V460 L240 500 H80"/>
       <path d="M330 40 V180 L370 220 H470"/>
       <path d="M470 300 H390 L350 340 V520"/>
       <path d="M120 140 H60 V320"/>
+    </g>
+    <g fill="none" stroke="#0D0D08" stroke-width="2.6">
+      <path class="sig" d="M40 60 H240 L280 100 V240"/>
+      <path class="sig d1" d="M280 300 V460 L240 500 H80"/>
+      <path class="sig d2" d="M330 40 V180 L370 220 H470"/>
+      <path class="sig d3" d="M470 300 H390 L350 340 V520"/>
+      <path class="sig d4" d="M120 140 H60 V320"/>
     </g>
     <g fill="#0D0D08">
       <rect x="234" y="54" width="12" height="12"/><rect x="274" y="234" width="12" height="12"/>
@@ -170,6 +192,10 @@ footer .note{margin-top:30px;font-family:var(--mono);font-size:.76rem;color:var(
       It records what the radio actually did — associations, roams, drops, reason codes —
       and returns <strong>verdicts, not data dumps</strong>. A snapshot says “−58 dBm, fine”.
       The chronicle says why it wasn't fine ten minutes ago.</p>
+    <svg class="pulse" viewBox="0 0 1200 48" preserveAspectRatio="none" aria-hidden="true">
+      <path class="base" d="M0 30 H180 L210 30 220 12 235 44 250 22 262 30 H470 L495 30 505 8 522 46 536 26 546 30 H800 L825 30 835 16 850 42 863 24 873 30 H1200" fill="none" stroke="#0D0D08" stroke-width="2.5"/>
+      <path class="sig" d="M0 30 H180 L210 30 220 12 235 44 250 22 262 30 H470 L495 30 505 8 522 46 536 26 546 30 H800 L825 30 835 16 850 42 863 24 873 30 H1200" fill="none" stroke="#0D0D08" stroke-width="3.2"/>
+    </svg>
     <div class="stats">
       <div class="stat cut"><b>3</b><span>DEPENDENCIES</span></div>
       <div class="stat cut"><b>13</b><span>CRATES, WHOLE TREE</span></div>

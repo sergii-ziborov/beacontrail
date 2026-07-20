@@ -40,9 +40,19 @@
 //! ```
 //!
 //! `status` (association state) · `scan` (BSS list + IE parsing) · `analyze`
-//! (findings) · `sample` (dynamics over a window) · `history` (event log).
+//! (findings) · `sample` (dynamics over a window) · `history` (reading the OS
+//! event log) · `record` (writing our own — the [`chronicle`]).
+//!
+//! Reading history and writing it are deliberately separate features: `history`
+//! reads what Windows already recorded, while `record` keeps a chronicle of our
+//! own through a pluggable [`chronicle::Sink`] — which is what history will
+//! mean on platforms whose OS keeps no log. The chronicle's types, sink and
+//! change detector are OS-free; only the recorder loop touches a collector.
 
 pub mod time;
+
+#[cfg(feature = "record")]
+pub mod chronicle;
 
 #[cfg(windows)]
 mod dll;

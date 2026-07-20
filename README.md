@@ -67,6 +67,39 @@ not build on a stock `rustup` toolchain at all — its transitive dependencies
 require mingw or the Visual C++ build tools. On an embedded target that is the
 difference between adding a dependency and rebuilding the image.
 
+## Repository layout
+
+Two repositories, because a repository is not a crate — one repo can publish
+several crates, and `cargo add` users see crates, not repos:
+
+| Name | What it is | Lives |
+|---|---|---|
+| `radiochron` | the library: collectors, 802.11 analysis, and the chronicle recorder | this repo, `crates/radiochron` |
+| `radiochron-mcp` | the MCP server crate; the installed binary is still named `radiochron` | this repo, `crates/radiochron-mcp` |
+| `radiochron-electron` | the desktop app (Node) | [separate repo](https://github.com/sergii-ziborov/radiochron-electron) |
+
+There is deliberately **no `radiochron-history` crate**. Reading history is the
+`history` feature (the Windows event log); writing it is the `record` feature —
+the `chronicle` module with a pluggable `Sink` trait. The shipped sink is
+append-only JSONL with built-in rotation (zero new dependencies, greppable, and
+safer across power loss than a database mid-transaction). Heavy backends belong
+in the consumer's crate as an `impl Sink` of ~30 lines: a bundled SQLite sink
+would drag in a C compile and break the stock-rustup build property this
+project is built around.
+
+```rust
+use radiochron::chronicle::{JsonlSink, Recorder, RecorderOptions, RotationPolicy};
+
+let sink = JsonlSink::open("chronicle.jsonl", RotationPolicy::default())?;
+let mut recorder = Recorder::new(sink, RecorderOptions::default());
+recorder.run_for(std::time::Duration::from_secs(3600))?; // or own the loop via .step()
+```
+
+The chronicle records **change, not polls**: a stable link produces one
+`associated` line and then silence, however long you record. Its types, sink
+and change detector are OS-free — they are the part that ports to Linux,
+macOS and cellular collectors unchanged.
+
 ## Build
 
 Needs nothing but [rustup](https://rustup.rs). No Visual C++ build tools, no

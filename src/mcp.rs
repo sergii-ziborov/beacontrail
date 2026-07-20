@@ -33,6 +33,16 @@ const SCAN_SETTLE: Duration = Duration::from_secs(4);
 const PARSE_ERROR: i64 = -32700;
 const INVALID_REQUEST: i64 = -32600;
 const METHOD_NOT_FOUND: i64 = -32601;
+const INTERNAL_ERROR: i64 = -32603;
+/// MCP reserves this specifically for an unknown resource URI. Note the
+/// asymmetry with tools: a tool failure is reported inside the result as
+/// `isError`, but a resource failure is a real JSON-RPC error.
+const RESOURCE_NOT_FOUND: i64 = -32002;
+
+const URI_REPORT_MD: &str = "beacontrail://report/latest";
+const URI_REPORT_JSON: &str = "beacontrail://report/latest.json";
+const URI_STATUS: &str = "beacontrail://status";
+const URI_NETWORKS: &str = "beacontrail://networks";
 
 /// Serve MCP on stdin/stdout until the client closes the stream.
 ///
@@ -100,6 +110,11 @@ fn dispatch(method: &str, params: &Value) -> Result<Value, RpcError> {
         "ping" => Ok(json!({})),
         "tools/list" => Ok(json!({ "tools": tool_definitions() })),
         "tools/call" => call_tool(params),
+        "resources/list" => Ok(json!({ "resources": resource_definitions() })),
+        // Several clients probe this unconditionally after initialize; an empty
+        // array costs three lines and avoids a red -32601 in their logs.
+        "resources/templates/list" => Ok(json!({ "resourceTemplates": [] })),
+        "resources/read" => read_resource(params),
         other => Err(RpcError {
             code: METHOD_NOT_FOUND,
             message: format!("unknown method: {other}"),
@@ -110,7 +125,12 @@ fn dispatch(method: &str, params: &Value) -> Result<Value, RpcError> {
 fn initialize_result() -> Value {
     json!({
         "protocolVersion": PROTOCOL_VERSION,
-        "capabilities": { "tools": {} },
+        // Neither subscribe nor listChanged: the resource set is a fixed table,
+        // and "changed" is ill-defined when RSSI jitters every beacon interval.
+        "capabilities": {
+            "tools": { "listChanged": false },
+            "resources": { "subscribe": false, "listChanged": false }
+        },
         "serverInfo": {
             "name": "beacontrail",
             "version": env!("CARGO_PKG_VERSION"),
@@ -218,6 +238,108 @@ fn tool_definitions() -> Value {
             "inputSchema": { "type": "object", "properties": {} }
         }
     ])
+}
+
+fn resource_definitions() -> Value {
+    json!([
+        {
+            "uri": URI_REPORT_MD,
+            "name": "wifi_diagnostic_report",
+            "title": "Wi-Fi Diagnostic Report",
+            "description": "Adapter state, current association, per-band census, findings, and the \
+                            strongest visible BSS. Rendered from cached scan results on every read.",
+            "mimeType": "text/markdown",
+            "annotations": { "audience": ["user", "assistant"], "priority": 0.9 }
+        },
+        {
+            "uri": URI_REPORT_JSON,
+            "name": "wifi_diagnostic_report_json",
+            "title": "Wi-Fi Diagnostic Report (JSON)",
+            "description": "Machine-readable form of the same snapshot, including the full findings list.",
+            "mimeType": "application/json",
+            "annotations": { "audience": ["assistant"], "priority": 0.5 }
+        },
+        {
+            "uri": URI_STATUS,
+            "name": "wifi_status",
+            "title": "Current Wi-Fi Connection",
+            "description": "Per-interface association state: SSID, BSSID, PHY type, signal quality, \
+                            RSSI estimate and rx/tx rates.",
+            "mimeType": "application/json"
+        },
+        {
+            "uri": URI_NETWORKS,
+            "name": "wifi_networks",
+            "title": "Visible Networks",
+            "description": "Compact list of nearby BSS from the cached scan.",
+            "mimeType": "application/json"
+        }
+    ])
+}
+
+/// Serve a resource from the cached scan.
+///
+/// Never triggers a scan: a client may read speculatively or on every turn, and
+/// a hidden four-second stall on a passive read is bad behaviour. `wifi_scan`
+/// stays the only thing that forces a refresh.
+fn read_resource(params: &Value) -> Result<Value, RpcError> {
+    let uri = params.get("uri").and_then(Value::as_str).ok_or(RpcError {
+        code: INVALID_REQUEST,
+        message: "resources/read requires a uri".to_string(),
+    })?;
+
+    // Exact match against a fixed table. Never substring-match or path-join, or
+    // a server that touches no filesystem acquires a traversal bug anyway.
+    let (mime, body) = match uri {
+        URI_REPORT_MD => ("text/markdown", render(Format::Markdown)),
+        URI_REPORT_JSON => ("application/json", render(Format::Json)),
+        URI_STATUS => ("application/json", render(Format::Status)),
+        URI_NETWORKS => ("application/json", render(Format::Networks)),
+        other => {
+            return Err(RpcError {
+                code: RESOURCE_NOT_FOUND,
+                message: format!("resource not found: {other}"),
+            })
+        }
+    };
+
+    let text = body.map_err(|error| RpcError {
+        code: INTERNAL_ERROR,
+        message: error.to_string(),
+    })?;
+
+    Ok(json!({
+        "contents": [{ "uri": uri, "mimeType": mime, "text": text }]
+    }))
+}
+
+enum Format {
+    Markdown,
+    Json,
+    Status,
+    Networks,
+}
+
+fn render(format: Format) -> anyhow::Result<String> {
+    let status = wlan::wifi_status().unwrap_or_default();
+
+    match format {
+        Format::Status => encode(&status),
+        Format::Networks => {
+            let entries = wlan::bss::bss_list()?;
+            encode(&entries.iter().map(BssSummary::from).collect::<Vec<_>>())
+        }
+        Format::Markdown | Format::Json => {
+            let entries = wlan::bss::bss_list()?;
+            let connection = status.iter().find_map(|entry| entry.connection.as_ref());
+            let analysis = wlan::analyze::analyze(&entries, connection);
+
+            match format {
+                Format::Markdown => Ok(crate::report::markdown(&status, &entries, &analysis)),
+                _ => encode(&crate::report::json(&status, &entries, &analysis)),
+            }
+        }
+    }
 }
 
 fn call_tool(params: &Value) -> Result<Value, RpcError> {
@@ -423,6 +545,63 @@ mod tests {
         let out = response("{ not json");
         assert_eq!(out["error"]["code"], PARSE_ERROR);
         assert_eq!(out["id"], Value::Null);
+    }
+
+    #[test]
+    fn initialize_declares_the_resources_capability() {
+        let out = response(r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#);
+        let resources = &out["result"]["capabilities"]["resources"];
+        assert!(resources.is_object());
+        // Declaring either would oblige us to implement subscribe/unsubscribe
+        // or push list_changed notifications.
+        assert_eq!(resources["subscribe"], false);
+        assert_eq!(resources["listChanged"], false);
+    }
+
+    #[test]
+    fn resources_list_returns_the_fixed_table() {
+        let out = response(r#"{"jsonrpc":"2.0","id":2,"method":"resources/list"}"#);
+        let resources = out["result"]["resources"].as_array().unwrap();
+        assert_eq!(resources.len(), 4);
+
+        for resource in resources {
+            // uri and name are the only required members of a Resource.
+            assert!(resource["uri"]
+                .as_str()
+                .unwrap()
+                .starts_with("beacontrail://"));
+            assert!(resource["name"].is_string());
+        }
+        // Never paginate a fixed table, and never send a null cursor.
+        assert!(out["result"].get("nextCursor").is_none());
+    }
+
+    #[test]
+    fn templates_list_is_answered_rather_than_rejected() {
+        let out = response(r#"{"jsonrpc":"2.0","id":3,"method":"resources/templates/list"}"#);
+        assert_eq!(
+            out["result"]["resourceTemplates"].as_array().unwrap().len(),
+            0
+        );
+        assert!(out.get("error").is_none());
+    }
+
+    #[test]
+    fn unknown_resource_uri_is_a_dedicated_error_code() {
+        let out = response(
+            r#"{"jsonrpc":"2.0","id":4,"method":"resources/read","params":{"uri":"beacontrail://bogus"}}"#,
+        );
+        // -32002, not -32601 and not -32602.
+        assert_eq!(out["error"]["code"], RESOURCE_NOT_FOUND);
+    }
+
+    #[test]
+    fn a_uri_that_merely_contains_a_known_one_is_rejected() {
+        // Guards the exact-match rule: no substring matching, no path joining.
+        let out = response(
+            r#"{"jsonrpc":"2.0","id":5,"method":"resources/read","params":{"uri":"beacontrail://report/latest/../evil"}}"#,
+        );
+        assert_eq!(out["error"]["code"], RESOURCE_NOT_FOUND);
     }
 
     #[test]

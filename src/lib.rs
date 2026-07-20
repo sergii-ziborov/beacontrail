@@ -13,4 +13,7 @@
 pub mod mcp;
 
 #[cfg(windows)]
+pub mod report;
+
+#[cfg(windows)]
 pub mod wlan;

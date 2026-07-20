@@ -260,7 +260,10 @@ fn push_unique<T: PartialEq>(target: &mut Vec<T>, value: T) {
 }
 
 fn push_unique_string(target: &mut Vec<String>, value: String) {
-    if !target.iter().any(|existing| existing.eq_ignore_ascii_case(&value)) {
+    if !target
+        .iter()
+        .any(|existing| existing.eq_ignore_ascii_case(&value))
+    {
         target.push(value);
     }
 }

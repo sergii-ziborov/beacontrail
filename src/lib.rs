@@ -1,14 +1,16 @@
-//! BeaconTrail — pure-Rust Windows Wi-Fi collectors.
+//! BeaconTrail — pure-Rust Windows Wi-Fi collectors, exposed over MCP.
 //!
-//! This library holds the data-collection engine. It deliberately reaches the
-//! native Windows WLAN / Event Log / IP stack through typed FFI (`windows-rs`)
-//! rather than by spawning `netsh` / PowerShell or compiling embedded C# at
-//! runtime, which is how the original TypeScript/Electron implementation worked.
+//! The engine reaches the native Windows WLAN stack through hand-written FFI
+//! (see [`wlan::sys`]) rather than by spawning `netsh` / PowerShell or compiling
+//! embedded C# at runtime, which is how the original TypeScript/Electron
+//! implementation worked. Nothing here shells out, and nothing leaves the
+//! machine.
 //!
-//! Module status:
-//! - [`wlan`] — WLAN interface state + current connection (step 1, implemented).
-//!   Next: `WlanGetNetworkBssList` (BSS list + 802.11 IE parse), `wevtapi`
-//!   event log, `GetAdaptersAddresses` IP config, `rusqlite` persistence.
+//! - [`wlan`] — interface state, current connection, BSS list, 802.11 IE parsing
+//! - [`mcp`] — the read-only Model Context Protocol tool surface
+
+#[cfg(windows)]
+pub mod mcp;
 
 #[cfg(windows)]
 pub mod wlan;

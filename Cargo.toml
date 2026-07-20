@@ -25,6 +25,13 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"
 
+# No MCP SDK either. The stdio transport is newline-delimited JSON-RPC 2.0 with
+# three methods that matter (initialize, tools/list, tools/call), which is a few
+# hundred lines over serde_json. The official `rmcp` crate would add tokio,
+# schemars and a mandatory `chrono` whose `clock` feature drags in
+# windows-link/raw-dylib — reintroducing the exact dlltool/MSVC build
+# requirement this project exists to avoid.
+
 # No `windows` crate on purpose. We need seven wlanapi.dll entry points and a
 # handful of structs, and we declare them ourselves in src/wlan/sys.rs. The
 # crate would drag in the windows-link/raw-dylib machinery, which needs either

@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # rust-toolchain.toml pins the GNU toolchain; rustup honours it here too,
+      # which keeps CI on the same self-sufficient setup as a developer machine.
+      - name: Show toolchain
+        run: rustup show
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      # CI runners have no WLAN adapter, so only the hardware-independent tests
+      # run here: the 802.11 IE parser, the JSON-RPC layer and the ABI layout
+      # assertions. Live collector behaviour is verified on real hardware.
+      - name: Test
+        run: cargo test
+
+      - name: Release build
+        run: cargo build --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: beacontrail-windows
+          path: target/release/beacontrail.exe

@@ -129,8 +129,7 @@ pub struct WlanBssList {
     pub bss_entries: [WlanBssEntry; 1],
 }
 
-type WlanOpenHandleFn =
-    unsafe extern "system" fn(u32, *mut c_void, *mut u32, *mut Handle) -> u32;
+type WlanOpenHandleFn = unsafe extern "system" fn(u32, *mut c_void, *mut u32, *mut Handle) -> u32;
 type WlanCloseHandleFn = unsafe extern "system" fn(Handle, *mut c_void) -> u32;
 type WlanEnumInterfacesFn =
     unsafe extern "system" fn(Handle, *mut c_void, *mut *mut WlanInterfaceInfoList) -> u32;
@@ -152,9 +151,13 @@ type WlanGetNetworkBssListFn = unsafe extern "system" fn(
     *mut c_void,
     *mut *mut WlanBssList,
 ) -> u32;
-type WlanScanFn =
-    unsafe extern "system" fn(Handle, *const Guid, *const Dot11Ssid, *const c_void, *mut c_void)
-        -> u32;
+type WlanScanFn = unsafe extern "system" fn(
+    Handle,
+    *const Guid,
+    *const Dot11Ssid,
+    *const c_void,
+    *mut c_void,
+) -> u32;
 type WlanFreeMemoryFn = unsafe extern "system" fn(*mut c_void);
 
 #[link(name = "kernel32")]
@@ -194,24 +197,27 @@ unsafe fn load() -> Option<WlanApi> {
         return None;
     }
 
+    // The target type is spelled out at every call site: an implicit transmute
+    // to a function pointer is exactly the kind of thing that should never be
+    // inferred.
     macro_rules! sym {
-        ($name:literal) => {{
+        ($name:literal, $ty:ty) => {{
             let ptr = GetProcAddress(module, $name.as_ptr());
             if ptr.is_null() {
                 return None;
             }
-            std::mem::transmute(ptr)
+            std::mem::transmute::<*mut c_void, $ty>(ptr)
         }};
     }
 
     Some(WlanApi {
-        open_handle: sym!(c"WlanOpenHandle"),
-        close_handle: sym!(c"WlanCloseHandle"),
-        enum_interfaces: sym!(c"WlanEnumInterfaces"),
-        query_interface: sym!(c"WlanQueryInterface"),
-        get_network_bss_list: sym!(c"WlanGetNetworkBssList"),
-        scan: sym!(c"WlanScan"),
-        free_memory: sym!(c"WlanFreeMemory"),
+        open_handle: sym!(c"WlanOpenHandle", WlanOpenHandleFn),
+        close_handle: sym!(c"WlanCloseHandle", WlanCloseHandleFn),
+        enum_interfaces: sym!(c"WlanEnumInterfaces", WlanEnumInterfacesFn),
+        query_interface: sym!(c"WlanQueryInterface", WlanQueryInterfaceFn),
+        get_network_bss_list: sym!(c"WlanGetNetworkBssList", WlanGetNetworkBssListFn),
+        scan: sym!(c"WlanScan", WlanScanFn),
+        free_memory: sym!(c"WlanFreeMemory", WlanFreeMemoryFn),
     })
 }
 

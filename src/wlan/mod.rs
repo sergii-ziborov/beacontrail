@@ -89,13 +89,11 @@ pub(crate) fn interface_guids(client: &WlanClient) -> anyhow::Result<Vec<Guid>> 
         }
 
         let list = &*list_ptr;
-        let guids = std::slice::from_raw_parts(
-            list.interface_info.as_ptr(),
-            list.num_items as usize,
-        )
-        .iter()
-        .map(|info| info.interface_guid)
-        .collect();
+        let guids =
+            std::slice::from_raw_parts(list.interface_info.as_ptr(), list.num_items as usize)
+                .iter()
+                .map(|info| info.interface_guid)
+                .collect();
 
         (api.free_memory)(list_ptr as *mut core::ffi::c_void);
         Ok(guids)
@@ -127,7 +125,10 @@ pub fn wifi_status() -> anyhow::Result<Vec<WifiStatus>> {
             };
             let connection =
                 query_current_connection(client.handle, &info.interface_guid).unwrap_or(None);
-            out.push(WifiStatus { interface, connection });
+            out.push(WifiStatus {
+                interface,
+                connection,
+            });
         }
 
         (api.free_memory)(list_ptr as *mut core::ffi::c_void);
@@ -288,16 +289,25 @@ mod tests {
 
     #[test]
     fn ssid_honours_the_declared_length() {
-        let mut ssid = Dot11Ssid { ssid_length: 5, ssid: [0; 32] };
+        let mut ssid = Dot11Ssid {
+            ssid_length: 5,
+            ssid: [0; 32],
+        };
         ssid.ssid[..5].copy_from_slice(b"MyNet");
         assert_eq!(ssid_to_string(&ssid).as_deref(), Some("MyNet"));
 
-        let empty = Dot11Ssid { ssid_length: 0, ssid: [0; 32] };
+        let empty = Dot11Ssid {
+            ssid_length: 0,
+            ssid: [0; 32],
+        };
         assert_eq!(ssid_to_string(&empty), None);
     }
 
     #[test]
     fn mac_is_lowercase_colon_separated() {
-        assert_eq!(mac_to_string(&[0xa4, 0x2b, 0x8c, 0x00, 0x1f, 0xe0]), "a4:2b:8c:00:1f:e0");
+        assert_eq!(
+            mac_to_string(&[0xa4, 0x2b, 0x8c, 0x00, 0x1f, 0xe0]),
+            "a4:2b:8c:00:1f:e0"
+        );
     }
 }

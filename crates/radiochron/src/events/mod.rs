@@ -42,6 +42,9 @@ const CHANNEL: &str = "Microsoft-Windows-WLAN-AutoConfig/Operational";
 #[derive(Debug, Clone, Serialize)]
 pub struct WlanEvent {
     pub event_id: u32,
+    /// Monotonic record identity assigned by the Windows event log. Unlike a
+    /// timestamp it distinguishes multiple records written in the same second.
+    pub record_id: Option<u64>,
     /// ISO 8601, straight from the event record's `TimeCreated/@SystemTime`.
     pub time_created: String,
     /// Seconds since the Unix epoch, derived from `time_created` for windowing.
@@ -126,27 +129,44 @@ pub fn recent(max: usize, within_seconds: Option<u64>) -> anyhow::Result<Vec<Wla
     let raw = sys::query_xml(CHANNEL, max, within_seconds)?;
     let now = crate::time::now_epoch_seconds();
 
-    let mut events: Vec<WlanEvent> = raw.iter().filter_map(|xml| decode(xml)).collect();
+    let mut events: Vec<WlanEvent> = raw
+        .iter()
+        .enumerate()
+        .map(|(index, xml)| {
+            decode(xml)
+                .map_err(|error| anyhow::anyhow!("failed to decode WLAN event {index}: {error}"))
+        })
+        .collect::<anyhow::Result<_>>()?;
 
     if let Some(window) = within_seconds {
-        let floor = now - window as i64;
+        let window = i64::try_from(window).unwrap_or(i64::MAX);
+        let floor = now.saturating_sub(window);
         events.retain(|event| event.epoch_seconds >= floor);
     }
 
     Ok(events)
 }
 
-fn decode(document: &str) -> Option<WlanEvent> {
-    let event_id: u32 = xml::element_text(document, "EventID")?
+fn decode(document: &str) -> anyhow::Result<WlanEvent> {
+    let event_id: u32 = xml::element_text(document, "EventID")
+        .ok_or_else(|| anyhow::anyhow!("missing EventID"))?
         .trim()
         .parse()
-        .ok()?;
-    let time_created = xml::attribute(document, "TimeCreated", "SystemTime")?;
+        .map_err(|error| anyhow::anyhow!("invalid EventID: {error}"))?;
+    let record_id = xml::element_text(document, "EventRecordID")
+        .map(|value| value.trim().parse::<u64>())
+        .transpose()
+        .map_err(|error| anyhow::anyhow!("invalid EventRecordID: {error}"))?;
+    let time_created = xml::attribute(document, "TimeCreated", "SystemTime")
+        .ok_or_else(|| anyhow::anyhow!("missing TimeCreated/SystemTime"))?;
+    let epoch_seconds = xml::epoch_from_iso8601(&time_created)
+        .ok_or_else(|| anyhow::anyhow!("invalid SystemTime: {time_created}"))?;
     let (data, named_fields) = xml::event_data(document);
 
-    Some(WlanEvent {
+    Ok(WlanEvent {
         event_id,
-        epoch_seconds: xml::epoch_from_iso8601(&time_created).unwrap_or(0),
+        record_id,
+        epoch_seconds,
         time_created,
         meaning: meaning(event_id),
         data,
@@ -161,6 +181,7 @@ mod tests {
     fn event(id: u32, fields: &[(&str, &str)]) -> WlanEvent {
         WlanEvent {
             event_id: id,
+            record_id: None,
             time_created: "2026-07-20T08:00:00.0000000Z".into(),
             epoch_seconds: 0,
             meaning: meaning(id),
@@ -206,5 +227,12 @@ mod tests {
     #[test]
     fn unrecognised_ids_are_surfaced_not_dropped() {
         assert_eq!(meaning(99999), "unrecognised event");
+    }
+
+    #[test]
+    fn decode_preserves_event_record_id_for_lossless_tailing() {
+        let document = r#"<Event><System><EventID>8001</EventID><EventRecordID>42</EventRecordID><TimeCreated SystemTime="2026-07-20T08:00:00.0000000Z"/></System><EventData/></Event>"#;
+        let decoded = decode(document).unwrap();
+        assert_eq!(decoded.record_id, Some(42));
     }
 }

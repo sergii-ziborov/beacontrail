@@ -20,10 +20,10 @@ radiochron = "0.2"
 ## Why no toolchain
 
 Collectors reach the OS through hand-written FFI with the DLL resolved at run
-time via `LoadLibraryW`, rather than through a binding crate. The `windows`
+time via `LoadLibraryExW` restricted to `System32`, rather than through a binding crate. The `windows`
 crate would drag in `windows-link`/`raw-dylib`, which needs mingw's `dlltool`
 on the GNU target or the multi-gigabyte Visual C++ build tools plus the Windows
-SDK on MSVC. Instead, the seven `wlanapi.dll` and four `wevtapi.dll` entry
+SDK on MSVC. Instead, the eight `wlanapi.dll` and four `wevtapi.dll` entry
 points are declared by hand with a handful of `#[repr(C)]` structs.
 
 The result: **three direct dependencies** — `serde`, `serde_json`, `anyhow` —
@@ -70,9 +70,10 @@ for status in wlan::wifi_status()? {
     }
 }
 
-// Nearby APs. The driver cache can be empty; trigger a scan first when needed.
-wlan::bss::request_scan()?;
-let entries = wlan::bss::bss_list()?;
+// Nearby APs. Wait for the driver's real completion notification, then retain
+// per-interface errors alongside useful entries from other radios.
+let refresh = wlan::bss::scan_and_wait(std::time::Duration::from_secs(12))?;
+let collection = wlan::bss::bss_list_detailed()?;
 # Ok::<(), anyhow::Error>(())
 ```
 
@@ -99,9 +100,10 @@ for finding in &analysis.findings {
 # Ok::<(), anyhow::Error>(())
 ```
 
-`sample::sample_connection(duration_s, interval_ms)` answers a different
-question — not "what is the state" but "is it stable": RSSI min/max/mean and
-swing, rx-rate range, distinct BSSIDs and roam count over a window.
+`sample::sample_connection_on(interface_guid, duration_s, interval_ms)` answers
+a different question — not "what is the state" but "is it stable": RSSI
+min/max/mean and swing, rx-rate range, distinct BSSIDs and roam count over a
+window. Collector errors are separate from genuine disconnected samples.
 
 ## History — why it dropped earlier
 
@@ -139,7 +141,10 @@ recorder.run_for(std::time::Duration::from_secs(3600))?; // or own the loop via 
 ```
 
 The chronicle records **change, not polls**: a stable link produces one
-`Associated` entry and then silence, however long you record. Its types, sink
+`Associated` entry per interface and then silence, however long you record.
+Collector errors never impersonate disconnects; event-log tailing uses
+`EventRecordID` and records an explicit `HistoryGap` when a bounded poll loses
+records. Its types, sink
 ([`chronicle::Sink`], [`chronicle::JsonlSink`], [`chronicle::VecSink`]) and
 [`chronicle::ChangeDetector`] are OS-free — they are the part that ports to
 Linux, macOS and cellular collectors unchanged. Heavy storage backends stay

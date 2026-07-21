@@ -1,6 +1,6 @@
 //! Hand-written runtime-loaded FFI to `wevtapi.dll`.
 //!
-//! Four symbols, resolved through the same `LoadLibraryW`/`GetProcAddress`
+//! Four symbols, resolved through the same system32-only `LoadLibraryExW`/`GetProcAddress`
 //! helper the WLAN module uses. `libwevtapi.a` does not ship with the Rust
 //! toolchain, so a link-time dependency would reintroduce the build-tooling
 //! problem this project exists to avoid.
@@ -99,15 +99,21 @@ pub fn query_xml(
     max: usize,
     within_seconds: Option<u64>,
 ) -> anyhow::Result<Vec<String>> {
+    if max == 0 {
+        return Ok(Vec::new());
+    }
+
     let api = api()?;
 
     // timediff() takes FILETIME and yields milliseconds; omitting the second
     // argument means "against current system time".
     let query = match within_seconds {
-        Some(seconds) => format!(
-            "*[System[TimeCreated[timediff(@SystemTime) <= {}]]]",
-            seconds * 1000
-        ),
+        Some(seconds) => {
+            let milliseconds = seconds
+                .checked_mul(1000)
+                .ok_or_else(|| anyhow::anyhow!("event history window is too large"))?;
+            format!("*[System[TimeCreated[timediff(@SystemTime) <= {milliseconds}]]]")
+        }
         None => "*".to_string(),
     };
 
@@ -156,23 +162,33 @@ pub fn query_xml(
         };
 
         if ok == 0 {
+            let code = last_error();
             // Normal termination, not a failure.
-            if last_error() == ERROR_NO_MORE_ITEMS {
+            if code == ERROR_NO_MORE_ITEMS {
                 break;
             }
-            break;
+            anyhow::bail!(
+                "EvtNext failed on {channel} after {} rendered events (error {code})",
+                documents.len()
+            );
         }
 
-        for &event in batch.iter().take(returned as usize) {
-            let guard = Handle(event, api);
-            if let Some(xml) = render(api, event) {
-                documents.push(xml);
-            }
-            drop(guard);
+        // Own every handle in the returned batch before doing anything that can
+        // fail or hit the caller's limit. This is important when, for example,
+        // 8 records are still needed from a 32-handle batch: the other 24 must
+        // be closed too.
+        let guards: Vec<Handle> = batch
+            .iter()
+            .take(returned as usize)
+            .copied()
+            .map(|event| Handle(event, api))
+            .collect();
 
+        for event in &guards {
             if documents.len() >= max {
-                break;
+                continue;
             }
+            documents.push(render(api, event.0)?);
         }
 
         if (returned as usize) < BATCH {
@@ -190,7 +206,7 @@ pub fn query_xml(
 /// `GetLastError()` after the successful second call, where it still holds the
 /// stale `ERROR_INSUFFICIENT_BUFFER` from the sizing call; that structure fails
 /// on every success. Key off the returned BOOL instead.
-fn render(api: &EvtApi, event: *mut c_void) -> Option<String> {
+fn render(api: &EvtApi, event: *mut c_void) -> anyhow::Result<String> {
     let mut needed_bytes: u32 = 0;
     let mut property_count: u32 = 0;
 
@@ -206,8 +222,11 @@ fn render(api: &EvtApi, event: *mut c_void) -> Option<String> {
         );
     }
 
-    if needed_bytes == 0 || last_error() != ERROR_INSUFFICIENT_BUFFER {
-        return None;
+    let sizing_error = last_error();
+    if needed_bytes == 0 || sizing_error != ERROR_INSUFFICIENT_BUFFER {
+        anyhow::bail!(
+            "EvtRender sizing failed (error {sizing_error}, needed {needed_bytes} bytes)"
+        );
     }
 
     // Bytes to UTF-16 code units, rounding up.
@@ -225,11 +244,12 @@ fn render(api: &EvtApi, event: *mut c_void) -> Option<String> {
     };
 
     if ok == 0 {
-        return None;
+        let code = last_error();
+        anyhow::bail!("EvtRender failed (error {code})");
     }
 
     let end = buffer.iter().position(|c| *c == 0).unwrap_or(buffer.len());
-    Some(String::from_utf16_lossy(&buffer[..end]))
+    Ok(String::from_utf16_lossy(&buffer[..end]))
 }
 
 /// Closes any `EVT_HANDLE`. Leaking these leaks kernel-side event-log state,

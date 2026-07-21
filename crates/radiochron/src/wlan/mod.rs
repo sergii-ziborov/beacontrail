@@ -23,6 +23,28 @@ pub(crate) struct WlanClient {
     pub(crate) handle: sys::Handle,
 }
 
+/// RAII owner for buffers allocated by wlanapi. Keeping this separate from the
+/// client handle makes every early return and `?` path release native memory.
+pub(crate) struct WlanAllocation(*mut core::ffi::c_void);
+
+impl WlanAllocation {
+    /// # Safety
+    /// `ptr` must be a non-null buffer returned by a wlanapi function whose
+    /// contract requires `WlanFreeMemory`.
+    pub(crate) unsafe fn new(ptr: *mut core::ffi::c_void) -> Self {
+        debug_assert!(!ptr.is_null());
+        Self(ptr)
+    }
+}
+
+impl Drop for WlanAllocation {
+    fn drop(&mut self) {
+        if let Ok(api) = sys::api() {
+            unsafe { (api.free_memory)(self.0) };
+        }
+    }
+}
+
 impl WlanClient {
     pub(crate) fn open() -> anyhow::Result<Self> {
         let api = sys::api()?;
@@ -38,6 +60,9 @@ impl WlanClient {
             )
         };
         if ret != 0 {
+            if !handle.is_null() {
+                unsafe { (api.close_handle)(handle, std::ptr::null_mut()) };
+            }
             anyhow::bail!("WlanOpenHandle failed (code {ret})");
         }
 
@@ -80,6 +105,8 @@ pub struct CurrentConnection {
 pub struct WifiStatus {
     pub interface: WlanInterface,
     pub connection: Option<CurrentConnection>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connection_error: Option<String>,
 }
 
 /// Collect the GUID of every WLAN interface on the machine.
@@ -90,10 +117,12 @@ pub(crate) fn interface_guids(client: &WlanClient) -> anyhow::Result<Vec<Guid>> 
     unsafe {
         let mut list_ptr: *mut WlanInterfaceInfoList = std::ptr::null_mut();
         let ret = (api.enum_interfaces)(client.handle, std::ptr::null_mut(), &mut list_ptr);
+        let allocation = (!list_ptr.is_null()).then(|| WlanAllocation::new(list_ptr.cast()));
         if ret != 0 || list_ptr.is_null() {
             anyhow::bail!("WlanEnumInterfaces failed (code {ret})");
         }
 
+        let _allocation = allocation.expect("non-null list has an owner");
         let list = &*list_ptr;
         let guids =
             std::slice::from_raw_parts(list.interface_info.as_ptr(), list.num_items as usize)
@@ -101,7 +130,6 @@ pub(crate) fn interface_guids(client: &WlanClient) -> anyhow::Result<Vec<Guid>> 
                 .map(|info| info.interface_guid)
                 .collect();
 
-        (api.free_memory)(list_ptr as *mut core::ffi::c_void);
         Ok(guids)
     }
 }
@@ -115,10 +143,12 @@ pub fn wifi_status() -> anyhow::Result<Vec<WifiStatus>> {
     unsafe {
         let mut list_ptr: *mut WlanInterfaceInfoList = std::ptr::null_mut();
         let ret = (api.enum_interfaces)(client.handle, std::ptr::null_mut(), &mut list_ptr);
+        let allocation = (!list_ptr.is_null()).then(|| WlanAllocation::new(list_ptr.cast()));
         if ret != 0 || list_ptr.is_null() {
             anyhow::bail!("WlanEnumInterfaces failed (code {ret})");
         }
 
+        let _allocation = allocation.expect("non-null list has an owner");
         let list = &*list_ptr;
         let items =
             std::slice::from_raw_parts(list.interface_info.as_ptr(), list.num_items as usize);
@@ -129,15 +159,20 @@ pub fn wifi_status() -> anyhow::Result<Vec<WifiStatus>> {
                 description: wide_to_string(&info.interface_description),
                 state: interface_state(info.state),
             };
-            let connection =
-                query_current_connection(client.handle, &info.interface_guid).unwrap_or(None);
+            let (connection, connection_error) = if info.state == 1 {
+                match query_current_connection(client.handle, &info.interface_guid) {
+                    Ok(connection) => (connection, None),
+                    Err(error) => (None, Some(error.to_string())),
+                }
+            } else {
+                (None, None)
+            };
             out.push(WifiStatus {
                 interface,
                 connection,
+                connection_error,
             });
         }
-
-        (api.free_memory)(list_ptr as *mut core::ffi::c_void);
     }
 
     Ok(out)
@@ -145,9 +180,9 @@ pub fn wifi_status() -> anyhow::Result<Vec<WifiStatus>> {
 
 /// Query the current connection for one interface.
 ///
-/// Returns `Ok(None)` when the interface is not associated — Windows reports a
-/// non-zero code such as `ERROR_INVALID_STATE`, which is a normal state rather
-/// than an error worth propagating.
+/// The caller only invokes this after enumeration reports `connected`. A
+/// failure here is therefore collector evidence and is propagated instead of
+/// being rewritten as an ordinary disconnect.
 unsafe fn query_current_connection(
     handle: sys::Handle,
     guid: &Guid,
@@ -165,8 +200,16 @@ unsafe fn query_current_connection(
         &mut data_ptr,
         std::ptr::null_mut(),
     );
+    let allocation = (!data_ptr.is_null()).then(|| WlanAllocation::new(data_ptr));
     if ret != 0 || data_ptr.is_null() {
-        return Ok(None);
+        anyhow::bail!("WlanQueryInterface failed (code {ret})");
+    }
+
+    let _allocation = allocation.expect("non-null query buffer has an owner");
+    if (data_size as usize) < std::mem::size_of::<WlanConnectionAttributes>() {
+        anyhow::bail!(
+            "WlanQueryInterface returned a truncated connection buffer ({data_size} bytes)"
+        );
     }
 
     let attrs = &*(data_ptr as *const WlanConnectionAttributes);
@@ -184,7 +227,6 @@ unsafe fn query_current_connection(
         tx_rate_kbps: assoc.tx_rate,
     };
 
-    (api.free_memory)(data_ptr);
     Ok(Some(connection))
 }
 

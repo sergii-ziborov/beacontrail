@@ -39,7 +39,7 @@ use std::io;
 use serde::Serialize;
 
 pub use detect::{ChangeDetector, Observation};
-pub use jsonl::{JsonlSink, RotationPolicy};
+pub use jsonl::{read_recent_jsonl, JsonlRead, JsonlSink, RotationPolicy};
 
 #[cfg(all(windows, feature = "status"))]
 pub use recorder::{Recorder, RecorderOptions};
@@ -51,6 +51,10 @@ pub struct Entry {
     pub epoch_seconds: i64,
     /// The same instant as RFC 3339 UTC, for humans grepping the file.
     pub time: String,
+    /// Interface responsible for the entry. `None` is reserved for process-wide
+    /// collector health and legacy callers that construct entries manually.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interface_guid: Option<String>,
     #[serde(flatten)]
     pub kind: EntryKind,
 }
@@ -58,10 +62,15 @@ pub struct Entry {
 impl Entry {
     /// Stamp an entry with the current time.
     pub fn now(kind: EntryKind) -> Self {
+        Self::now_for_interface(None, kind)
+    }
+
+    pub fn now_for_interface(interface_guid: Option<String>, kind: EntryKind) -> Self {
         let epoch_seconds = crate::time::now_epoch_seconds();
         Self {
             epoch_seconds,
             time: crate::time::format_epoch(epoch_seconds),
+            interface_guid,
             kind,
         }
     }
@@ -95,8 +104,20 @@ pub enum EntryKind {
     /// A WLAN AutoConfig event observed while recording (Windows only).
     LogEvent {
         event_id: u32,
+        record_id: Option<u64>,
         meaning: String,
         fields: BTreeMap<String, String>,
+    },
+    /// A native collector failed. This is deliberately not represented as a
+    /// disconnect: inability to observe the interface is not evidence that the
+    /// radio disconnected.
+    CollectorError { source: String, message: String },
+    /// Emitted once when a previously failing collector succeeds again.
+    CollectorRecovered { source: String },
+    /// Windows rotated or outpaced the bounded event-log query between polls.
+    HistoryGap {
+        after_record_id: u64,
+        before_record_id: u64,
     },
 }
 
@@ -134,6 +155,7 @@ mod tests {
         let entry = Entry {
             epoch_seconds: 1_784_528_615,
             time: "2026-07-20T06:23:35Z".into(),
+            interface_guid: Some("guid".into()),
             kind: EntryKind::Roamed {
                 from_bssid: "aa:aa:aa:aa:aa:aa".into(),
                 to_bssid: "bb:bb:bb:bb:bb:bb".into(),

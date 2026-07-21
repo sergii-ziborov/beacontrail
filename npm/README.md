@@ -20,9 +20,10 @@ Or in any MCP client config:
 { "mcpServers": { "radiochron": { "command": "npx", "args": ["-y", "radiochron"] } } }
 ```
 
-Six read-only tools: `wifi_history`, `wifi_analyze`, `wifi_sample`,
-`wifi_status`, `wifi_networks`, `wifi_scan`. Nothing writes, nothing reads
-saved passwords, nothing leaves the machine.
+Ten typed tools: the six Wi-Fi diagnostics plus `chronicle_start`,
+`chronicle_stop`, `chronicle_status` and `chronicle_recent`. Scans update the
+driver cache and the opt-in chronicle writes a rotating local JSONL file;
+nothing reads saved passwords or leaves the machine.
 
 **Windows-only today** — the engine talks to `wlanapi.dll` and the WLAN event
 log directly. Linux (nl80211) and macOS (CoreWLAN) are on the

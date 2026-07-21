@@ -11,7 +11,7 @@ One engine, four surfaces:
 | Surface | Status | For |
 |---|---|---|
 | `radiochron` — Rust library | this repo | IoT agents, exporters, CLIs — anything embedding collectors, analysis and the chronicle recorder |
-| `radiochron-mcp` — MCP server | this repo | AI assistants: six read-only tools + resources over stdio |
+| `radiochron-mcp` — MCP server | this repo | AI assistants: ten typed tools + five resources over stdio |
 | `radiochron` — npm package | in this repo (`npm/`), **publish pending** | one-line MCP install for any client — ships the prebuilt server binary, no Rust toolchain on the consumer's machine |
 | [`radiochron-electron`](https://github.com/sergii-ziborov/radiochron-electron) — desktop | separate repo | evidence timelines and network inventory on the same engine |
 
@@ -42,9 +42,9 @@ compiler, paid a cold-compile cost, parsed locale-dependent English text, and
 tripped AV/WDAC on exactly the managed corporate machines it targeted.
 
 RadioChron calls the same Win32 APIs through hand-written FFI. It does not
-depend on the `windows` crate either: seven `wlanapi.dll` entry points and a
+depend on the `windows` crate either: eight `wlanapi.dll` entry points and a
 handful of `#[repr(C)]` structs are declared directly, and the DLL is resolved
-at run time via `LoadLibraryW`. No import library, no `raw-dylib`, no `dlltool`,
+at run time via `LoadLibraryExW` restricted to `System32`. No import library, no `raw-dylib`, no `dlltool`,
 no Visual C++ build tools.
 
 | Data source | Native API | Replaces |
@@ -67,7 +67,7 @@ mandatory `chrono` (whose `clock` feature drags in `windows-link`/`raw-dylib`)
 would have reintroduced the exact build requirement this project avoids.
 
 **Total dependency count: three** — `serde`, `serde_json`, `anyhow`, for a
-13-crate tree including transitive dependencies. Release binary: **~724 KB**.
+13-crate tree including transitive dependencies. Release binary: **~1.0 MB**.
 Runtime requirements on the target machine: none.
 
 For comparison, the nearest equivalent crate resolves to **51 crates** and does
@@ -151,20 +151,27 @@ Or add it to a client config directly:
 }
 ```
 
-No arguments, no configuration, no environment variables.
+No arguments are required. `RADIOCHRON_CHRONICLE_PATH` optionally overrides the
+default `%LOCALAPPDATA%\RadioChron\chronicle.jsonl` recorder path.
 
 ## Tools
 
 | Tool | Arguments | Returns |
 |---|---|---|
 | `wifi_status` | — | Every WLAN interface, its state, and for the associated one: SSID, BSSID, PHY type (`ht`/`vht`/`he`/`eht`), signal quality, estimated RSSI in dBm, rx/tx rates |
-| `wifi_networks` | `refresh_scan?: boolean`<br>`detail?: "summary" \| "full"` | `{count, refreshed, detail, networks}` — nearby BSS entries with SSID, BSSID, band, channel, real RSSI in dBm, PHY type, security and capability flags |
+| `wifi_networks` | `refresh_scan?: boolean`<br>`detail?: "summary" \| "full"` | Nearby BSS entries plus cache age, per-interface errors and the exact scan-completion result; parses WPA2/WPA3/OWE, ciphers, PMF, channel width and BSS load |
 | `wifi_analyze` | `refresh_scan?: boolean` | **Findings, not records.** Co-channel contention, crowded-channel association, weak signal, band-steering and roam candidates, insecure security, hidden SSIDs, scan-quality problems |
 | `wifi_history` | `within_seconds?: number`<br>`max_events?: number`<br>`include_events?: boolean` | **Why it dropped earlier.** Reads the WLAN AutoConfig event log and returns a verdict: reconnect loops, an AP repeatedly failing key exchange, suspected credential mismatch |
-| `wifi_sample` | `duration_seconds?: 1..120`<br>`interval_ms?: >=250` | Connection dynamics over a window: RSSI min/max/mean and swing, rx-rate range, distinct BSSIDs, roam count, disconnected samples |
-| `wifi_scan` | — | Triggers a driver scan on each interface; returns how many accepted |
+| `wifi_sample` | `interface_guid?: string`<br>`duration_seconds?: 1..120`<br>`interval_ms?: 250..60000` | Cancelable connection sampling with MCP progress; collector failures are distinct from real disconnects |
+| `wifi_scan` | — | Triggers a scan and waits for Windows' per-interface completion/failure notification |
+| `chronicle_start` | `interval_seconds?: 1..300`<br>`signal_threshold_db?: 1..50` | Starts the local, rotating change-only JSONL recorder |
+| `chronicle_stop` | — | Stops and flushes the recorder |
+| `chronicle_status` | — | Recorder state, storage path and errors |
+| `chronicle_recent` | `max_entries?: 1..1000` | Recent entries across the active and rotated chronicle files |
 
-All six are read-only.
+Status, history, sampling and reads are read-only. A Wi-Fi scan updates the
+driver cache and emits standard scan frames; chronicle start/stop control a
+local file writer. MCP annotations advertise those distinctions explicitly.
 
 **Prefer `wifi_analyze`.** On a real 43-BSS environment it answers in 802 bytes
 where the full BSS list costs 41 KB — a 98% reduction — because it returns the
@@ -183,7 +190,8 @@ Two behaviours worth knowing about `wifi_networks`:
 - **The driver cache can be empty or sparse.** If the first read returns nothing,
   it is retried once behind a real scan rather than reported as "no networks" —
   an agent would otherwise repeat that as a fact about the environment. The
-  `refreshed` field says whether a scan was performed.
+  `refresh` reports accepted, completed, failed and timed-out interfaces, while
+  `cache_age_seconds` is `null` when this process has not observed a completion.
 - **`summary` is the default** and costs ~150 bytes per network against ~1000 for
   `full`. `full` adds raw IE ids and names, rates, timestamps and capability
   bits; ask for it only when those fields are actually needed.
@@ -203,13 +211,13 @@ model. They are not part of this server's tool surface, and calling them returns
 
 Measured on an Intel Wi-Fi 6E AX211 in a dense office environment:
 
-- 74 unit tests green, including C-ABI struct layout assertions
+- 79 unit tests green, including C-ABI struct layout assertions
 - `wifi_status` — connected, `phy=he`, −58 dBm, 649/432 Mbps
 - `wifi_networks` — up to **58 BSS** across 2.4, 5 and 6 GHz; RSSI −91..−54 dBm;
   band and channel resolved for every entry; IE blobs 100–384 bytes
-- Latency, excluding the deliberate 4 s post-scan settle: `wifi_status` ~74 ms,
-  cached `wifi_networks` and `wifi_scan` under 40 ms. Process start plus
-  `initialize` is ~61 ms of that.
+- A live MCP round-trip verified all ten tools, structured results, real
+  scan-complete notification (1/1 interface), progress delivery, cancellation
+  in ~1 second, and chronicle start/read/stop.
 
 Two useful correctness signals fall out of real captures: 6 GHz APs report
 `RSN`+`HE` with **no** HT/VHT elements, and a legacy 802.11g printer reports

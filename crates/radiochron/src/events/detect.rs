@@ -88,9 +88,22 @@ fn push_credential_mismatch(findings: &mut Vec<HistoryFinding>, events: &[&WlanE
         return;
     }
 
+    // The code is undocumented and has been observed during a normal rekey.
+    // A single occurrence is evidence worth surfacing, but not enough to call
+    // a credential definitively wrong. Repetition inside the analysis window
+    // is the corroboration that raises it to critical.
+    let corroborated = hits.windows(2).any(|pair| {
+        let same_named_ssid = matches!(
+            (pair[0].field("SSID"), pair[1].field("SSID")),
+            (Some(left_ssid), Some(right_ssid)) if left_ssid == right_ssid
+        );
+        pair[1].epoch_seconds.saturating_sub(pair[0].epoch_seconds) <= LOOP_WINDOW_S
+            && same_named_ssid
+    });
+
     findings.push(HistoryFinding {
         id: "credential_mismatch",
-        severity: "critical",
+        severity: if corroborated { "critical" } else { "warning" },
         title: format!(
             "{} security teardowns report a suspected PSK mismatch",
             hits.len()
@@ -101,8 +114,8 @@ fn push_credential_mismatch(findings: &mut Vec<HistoryFinding>, events: &[&WlanE
             "first_seen": hits.first().map(|e| e.time_created.clone()),
         }),
         caveat: "The hint code is a single-machine observation, not a documented constant, and \
-                 Windows raises it heuristically. Verify the saved profile's key before acting; \
-                 it can also appear transiently during a normal rekey.",
+                 Windows raises it heuristically. One occurrence stays a warning because it can \
+                 appear during a normal rekey; verify the saved profile before acting.",
     });
 }
 
@@ -255,6 +268,7 @@ mod tests {
 
         WlanEvent {
             event_id: id,
+            record_id: None,
             time_created: "2026-07-20T08:00:00.0000000Z".into(),
             epoch_seconds: at,
             meaning: super::super::meaning(id),
@@ -372,7 +386,7 @@ mod tests {
     }
 
     #[test]
-    fn a_psk_mismatch_outranks_the_loop_it_causes() {
+    fn one_psk_hint_is_a_warning_not_a_critical_claim() {
         let events = vec![event(
             11004,
             0,
@@ -381,7 +395,39 @@ mod tests {
 
         let verdict = detect(&events);
         assert_eq!(verdict.findings[0].id, "credential_mismatch");
+        assert_eq!(verdict.findings[0].severity, "warning");
+    }
+
+    #[test]
+    fn repeated_psk_hints_for_one_ssid_are_critical() {
+        let events = vec![
+            event(
+                11004,
+                0,
+                &[("SecurityHintCode", "294932"), ("SSID", "MyNet")],
+            ),
+            event(
+                11004,
+                30,
+                &[("SecurityHintCode", "294932"), ("SSID", "MyNet")],
+            ),
+        ];
+
+        let verdict = detect(&events);
+        assert_eq!(verdict.findings[0].id, "credential_mismatch");
         assert_eq!(verdict.findings[0].severity, "critical");
+    }
+
+    #[test]
+    fn repeated_psk_hints_without_an_ssid_stay_a_warning() {
+        let events = vec![
+            event(11004, 0, &[("SecurityHintCode", "294932")]),
+            event(11004, 30, &[("SecurityHintCode", "294932")]),
+        ];
+
+        let verdict = detect(&events);
+        assert_eq!(verdict.findings[0].id, "credential_mismatch");
+        assert_eq!(verdict.findings[0].severity, "warning");
     }
 
     #[test]

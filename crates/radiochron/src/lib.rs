@@ -54,7 +54,7 @@ pub mod time;
 #[cfg(feature = "record")]
 pub mod chronicle;
 
-#[cfg(windows)]
+#[cfg(all(windows, any(feature = "status", feature = "history")))]
 mod dll;
 
 #[cfg(all(windows, feature = "history"))]

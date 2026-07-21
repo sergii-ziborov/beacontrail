@@ -8,6 +8,7 @@
 //! many entries were written, so an IoT agent embeds it in its own scheduler,
 //! and [`Recorder::run_for`] is the convenience wrapper for everyone else.
 
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use super::{ChangeDetector, Entry, Observation, Sink};
@@ -32,57 +33,123 @@ impl Default for RecorderOptions {
 
 pub struct Recorder<S: Sink> {
     sink: S,
-    detector: ChangeDetector,
+    detectors: BTreeMap<String, ChangeDetector>,
     options: RecorderOptions,
+    last_status_error: Option<String>,
+    interface_errors: BTreeMap<String, String>,
     /// Only events newer than this reach the chronicle. Starts at construction
     /// time: the chronicle records what happens *while recording* — the past is
     /// already served by [`crate::events::recent`], and dumping it here would
     /// duplicate every event on every restart.
     #[cfg(feature = "history")]
     last_log_epoch: i64,
+    #[cfg(feature = "history")]
+    last_log_record_id: Option<u64>,
+    #[cfg(feature = "history")]
+    last_history_error: Option<String>,
 }
 
 impl<S: Sink> Recorder<S> {
     pub fn new(sink: S, options: RecorderOptions) -> Self {
         Self {
             sink,
-            detector: ChangeDetector::new(options.signal_threshold_db),
+            detectors: BTreeMap::new(),
             options,
+            last_status_error: None,
+            interface_errors: BTreeMap::new(),
             #[cfg(feature = "history")]
             last_log_epoch: crate::time::now_epoch_seconds(),
+            #[cfg(feature = "history")]
+            last_log_record_id: None,
+            #[cfg(feature = "history")]
+            last_history_error: None,
         }
     }
 
     /// One poll: observe, detect, tail the log, write. Returns entries written.
     ///
-    /// A failed status read is recorded as a disconnected observation rather
-    /// than aborting the run — for a recorder, "could not see the radio" is
-    /// itself a data point, and a transient WLAN-service hiccup must not end a
-    /// week-long recording.
+    /// A failed status read becomes collector-health evidence rather than a
+    /// false disconnect. Every WLAN interface has its own change detector.
     pub fn step(&mut self) -> anyhow::Result<usize> {
-        let observation = match wlan::wifi_status() {
-            Ok(status) => status
-                .into_iter()
-                .find_map(|s| s.connection)
-                .map(|c| Observation {
-                    connected: true,
-                    ssid: c.ssid,
-                    bssid: c.bssid,
-                    rssi_dbm: Some(c.rssi_dbm_estimate),
-                })
-                .unwrap_or_default(),
-            Err(_) => Observation::default(),
-        };
+        let mut kinds: Vec<(Option<String>, super::EntryKind)> = Vec::new();
 
-        #[cfg_attr(not(feature = "history"), allow(unused_mut))]
-        let mut kinds = self.detector.observe(observation);
+        match wlan::wifi_status() {
+            Ok(statuses) => {
+                if self.last_status_error.take().is_some() {
+                    kinds.push((
+                        None,
+                        super::EntryKind::CollectorRecovered {
+                            source: "wifi_status".to_string(),
+                        },
+                    ));
+                }
+
+                for status in statuses {
+                    let guid = status.interface.guid;
+                    if let Some(message) = status.connection_error {
+                        if self.interface_errors.get(&guid) != Some(&message) {
+                            kinds.push((
+                                Some(guid.clone()),
+                                super::EntryKind::CollectorError {
+                                    source: "current_connection".to_string(),
+                                    message: message.clone(),
+                                },
+                            ));
+                        }
+                        self.interface_errors.insert(guid, message);
+                        continue;
+                    }
+                    if self.interface_errors.remove(&guid).is_some() {
+                        kinds.push((
+                            Some(guid.clone()),
+                            super::EntryKind::CollectorRecovered {
+                                source: "current_connection".to_string(),
+                            },
+                        ));
+                    }
+                    let observation = status
+                        .connection
+                        .map(|connection| Observation {
+                            connected: true,
+                            ssid: connection.ssid,
+                            bssid: connection.bssid,
+                            rssi_dbm: Some(connection.rssi_dbm_estimate),
+                        })
+                        .unwrap_or_default();
+                    let detector = self
+                        .detectors
+                        .entry(guid.clone())
+                        .or_insert_with(|| ChangeDetector::new(self.options.signal_threshold_db));
+                    kinds.extend(
+                        detector
+                            .observe(observation)
+                            .into_iter()
+                            .map(|kind| (Some(guid.clone()), kind)),
+                    );
+                }
+            }
+            Err(error) => {
+                let message = error.to_string();
+                if self.last_status_error.as_deref() != Some(&message) {
+                    kinds.push((
+                        None,
+                        super::EntryKind::CollectorError {
+                            source: "wifi_status".to_string(),
+                            message: message.clone(),
+                        },
+                    ));
+                }
+                self.last_status_error = Some(message);
+            }
+        }
 
         #[cfg(feature = "history")]
         kinds.extend(self.tail_event_log());
 
         let written = kinds.len();
-        for kind in kinds {
-            self.sink.write(&Entry::now(kind))?;
+        for (interface_guid, kind) in kinds {
+            self.sink
+                .write(&Entry::now_for_interface(interface_guid, kind))?;
         }
         if written > 0 {
             self.sink.flush()?;
@@ -112,32 +179,96 @@ impl<S: Sink> Recorder<S> {
 
     /// New WLAN AutoConfig events since the last step, oldest first.
     ///
-    /// A read failure yields nothing rather than an error: the log is the
-    /// *secondary* source here, and an access-denied must not kill a recording
-    /// that the polled source is still feeding.
+    /// A read failure is recorded once and recovery is recorded once; it does
+    /// not stop the primary polled recorder.
     #[cfg(feature = "history")]
-    fn tail_event_log(&mut self) -> Vec<super::EntryKind> {
-        // Look back far enough to bridge slow polls; the epoch filter dedupes.
-        let Ok(events) = crate::events::recent(64, Some(120)) else {
-            return Vec::new();
+    fn tail_event_log(&mut self) -> Vec<(Option<String>, super::EntryKind)> {
+        // EventRecordID, not timestamp seconds, is the durable cursor. The
+        // bounded read remains honest under bursts because a detected gap is
+        // recorded explicitly rather than silently discarded.
+        // The event query must cover at least one complete polling interval;
+        // otherwise a deliberately slow recorder can miss events before the
+        // EventRecordID cursor has seen them.
+        let event_lookback = self
+            .options
+            .interval
+            .as_secs()
+            .saturating_mul(2)
+            .clamp(120, 3_600);
+        let events = match crate::events::recent(512, Some(event_lookback)) {
+            Ok(events) => events,
+            Err(error) => {
+                let message = error.to_string();
+                let mut out = Vec::new();
+                if self.last_history_error.as_deref() != Some(&message) {
+                    out.push((
+                        None,
+                        super::EntryKind::CollectorError {
+                            source: "wlan_event_log".to_string(),
+                            message: message.clone(),
+                        },
+                    ));
+                }
+                self.last_history_error = Some(message);
+                return out;
+            }
         };
 
-        let mut fresh: Vec<super::EntryKind> = events
+        let mut out = Vec::new();
+        if self.last_history_error.take().is_some() {
+            out.push((
+                None,
+                super::EntryKind::CollectorRecovered {
+                    source: "wlan_event_log".to_string(),
+                },
+            ));
+        }
+
+        let previous_record_id = self.last_log_record_id;
+        let mut fresh: Vec<&crate::events::WlanEvent> = events
             .iter()
-            .filter(|e| e.epoch_seconds > self.last_log_epoch)
-            .map(|e| super::EntryKind::LogEvent {
-                event_id: e.event_id,
-                meaning: e.meaning.to_string(),
-                fields: e.data.clone(),
+            .filter(|event| match (previous_record_id, event.record_id) {
+                (Some(previous), Some(record)) => record > previous,
+                _ => event.epoch_seconds > self.last_log_epoch,
             })
             .collect();
         // `recent` is newest-first; a chronicle reads oldest-first.
         fresh.reverse();
 
+        if let (Some(previous), Some(first)) = (
+            previous_record_id,
+            fresh.iter().filter_map(|event| event.record_id).min(),
+        ) {
+            if first > previous.saturating_add(1) {
+                out.push((
+                    None,
+                    super::EntryKind::HistoryGap {
+                        after_record_id: previous,
+                        before_record_id: first,
+                    },
+                ));
+            }
+        }
+
+        out.extend(fresh.into_iter().map(|event| {
+            (
+                event.interface_guid().map(str::to_string),
+                super::EntryKind::LogEvent {
+                    event_id: event.event_id,
+                    record_id: event.record_id,
+                    meaning: event.meaning.to_string(),
+                    fields: event.data.clone(),
+                },
+            )
+        }));
+
         if let Some(newest) = events.iter().map(|e| e.epoch_seconds).max() {
             self.last_log_epoch = self.last_log_epoch.max(newest);
         }
+        if let Some(newest) = events.iter().filter_map(|e| e.record_id).max() {
+            self.last_log_record_id = Some(self.last_log_record_id.unwrap_or(0).max(newest));
+        }
 
-        fresh
+        out
     }
 }

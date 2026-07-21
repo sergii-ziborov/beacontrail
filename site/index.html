@@ -4,21 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>RadioChron — the chronicle of your radio. Rust Wi-Fi diagnostics library + MCP server</title>
-<meta name="description" content="RadioChron records what the radio did — associations, roams, drops, reason codes — and returns verdicts, not data dumps. Pure Rust, 3 dependencies, ~724 KB, builds on bare rustup. Library, MCP server, and a desktop app.">
+<meta name="description" content="RadioChron records what the radio did — associations, roams, drops, reason codes — and returns verdicts, not data dumps. Pure Rust, 3 dependencies, ~1.0 MB, builds on bare rustup. Library, MCP server, and a desktop app.">
 <meta name="keywords" content="wifi diagnostics, rust wifi library, MCP server, model context protocol, wlan event log, reconnect loop, IoT wifi monitoring, 802.11 analysis, embedded rust, wifi verdict">
 <meta name="robots" content="index, follow">
 <link rel="canonical" href="https://radiochron.com/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="RadioChron">
 <meta property="og:title" content="RadioChron — the chronicle of your radio">
-<meta property="og:description" content="Pure-Rust Wi-Fi diagnostics that answers 'why did it drop': verdicts from connection history, a change-only recorder, and an MCP server. 3 dependencies, ~724 KB.">
+<meta property="og:description" content="Pure-Rust Wi-Fi diagnostics that answers 'why did it drop': verdicts from connection history, a change-only recorder, and an MCP server. 3 dependencies, ~1.0 MB.">
 <meta property="og:url" content="https://radiochron.com/">
 <meta property="og:image" content="https://radiochron.com/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="RadioChron — the chronicle of your radio">
-<meta name="twitter:description" content="Rust Wi-Fi diagnostics: verdicts from history, not data dumps. 3 deps, ~724 KB, MIT/Apache-2.0.">
+<meta name="twitter:description" content="Rust Wi-Fi diagnostics: verdicts from history, not data dumps. 3 deps, ~1.0 MB, MIT/Apache-2.0.">
 <meta name="twitter:image" content="https://radiochron.com/og.png">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <script type="application/ld+json">
@@ -96,7 +96,7 @@
     <div class="stats">
       <div class="stat cut"><b>3</b><span>DEPENDENCIES</span></div>
       <div class="stat cut"><b>13</b><span>CRATES, WHOLE TREE</span></div>
-      <div class="stat cut"><b>~724&nbsp;KB</b><span>SERVER BINARY</span></div>
+      <div class="stat cut"><b>~1.0&nbsp;MB</b><span>SERVER BINARY</span></div>
       <div class="stat cut"><b>0</b><span>C TOOLCHAIN NEEDED</span></div>
     </div>
     <div class="term cut">
@@ -209,11 +209,11 @@ radiochron = { git = "…", default-features = false, features = ["status"] }
         <div class="m"><code>radiochron</code> — collectors, 802.11 analysis, the chronicle.
         What an IoT agent, exporter or CLI embeds. MIT/Apache-2.0, three dependencies.</div></div>
       <div class="card cut"><h3>MCP server</h3>
-        <div class="m"><code>radiochron-mcp</code> — six read-only tools + resources over stdio.
+        <div class="m"><code>radiochron-mcp</code> — ten typed tools + five resources over stdio.
         Point Claude, Codex or any MCP client at one binary. No config, no arguments.</div></div>
-      <div class="card cut"><h3>npm package <span style="color:var(--cyan);font-size:.7rem">PLANNED</span></h3>
-        <div class="m"><code>radiochron</code> on npm via napi-rs with prebuilt binaries —
-        import from Node.js without a Rust toolchain. Name reserved-checked, build pending.</div></div>
+      <div class="card cut"><h3>npm launcher <span style="color:var(--cyan);font-size:.7rem">PUBLISH PENDING</span></h3>
+        <div class="m">The prebuilt MCP binary launcher already lives in <code>npm/</code> with
+        version/commit provenance checks. Direct Node.js bindings via napi-rs remain planned.</div></div>
       <div class="card cut"><h3>Desktop app</h3>
         <div class="m"><a href="/electron">RadioChron Desktop</a> —
         evidence timelines, baseline runs and network inventory on the same engine.
@@ -225,7 +225,7 @@ radiochron = { git = "…", default-features = false, features = ["status"] }
 <section class="band k" id="tools">
   <div class="wrap">
     <div class="tag">//: 05 — MCP SURFACE</div>
-    <h2>Six tools, all read-only</h2>
+    <h2>Ten typed tools, honest about effects</h2>
     <table>
       <tr><th>tool</th><th>answers</th></tr>
       <tr><td><code>wifi_history</code></td><td>“why did it drop earlier” — reconnect loops, an AP failing key exchange, credential mismatch <span class="m">// the headline</span></td></tr>
@@ -234,6 +234,10 @@ radiochron = { git = "…", default-features = false, features = ["status"] }
       <tr><td><code>wifi_status</code></td><td>the association right now: SSID, BSSID, PHY, rates, RSSI</td></tr>
       <tr><td><code>wifi_networks</code></td><td>nearby BSS with band, channel, dBm and security flags; summary by default</td></tr>
       <tr><td><code>wifi_scan</code></td><td>ask the driver for a fresh scan</td></tr>
+      <tr><td><code>chronicle_start</code></td><td>start the rotating local change-only recorder</td></tr>
+      <tr><td><code>chronicle_stop</code></td><td>stop and flush the recorder</td></tr>
+      <tr><td><code>chronicle_status</code></td><td>recorder state, path and latest error</td></tr>
+      <tr><td><code>chronicle_recent</code></td><td>recent changes across active and rotated JSONL files</td></tr>
     </table>
     <p style="margin-top:18px" class="m">Deliberately absent: saved Wi-Fi keys, MAC changes, adapter
       restarts, LAN sweeps. An autonomous model must not be able to leak a credential or drop you
@@ -267,10 +271,10 @@ radiochron = { git = "…", default-features = false, features = ["status"] }
     <div class="tag">//: 07 — ROADMAP</div>
     <h2>Where this goes</h2>
     <ul class="h road">
-      <li class="done"><b>SHIPPED</b>Native WLAN collectors, 802.11 IE analysis, event-log verdicts, chronicle recorder, MCP server — verified on real hardware, 74 tests</li>
+      <li class="done"><b>SHIPPED</b>Native WLAN collectors, WPA2/WPA3/OWE analysis, event-log verdicts, MCP-controlled chronicle, structured/cancelable MCP — verified on real hardware, 79 tests</li>
       <li class="plan"><b>PLANNED</b>Cellular collectors — RSRP/RSRQ/SINR via Windows MBN and Linux ModemManager; for a field device the radio that matters may not be Wi-Fi</li>
       <li class="plan"><b>PLANNED</b>Linux via nl80211 — raw IEs straight from the kernel, richer than Windows</li>
-      <li class="plan"><b>PLANNED</b>npm bindings via napi-rs prebuilds; crates.io publish</li>
+      <li class="plan"><b>PLANNED</b>Direct Node.js bindings via napi-rs; crates.io/npm publish</li>
       <li class="plan"><b>PLANNED</b>macOS via CoreWLAN — honestly less: the public API hides BSSIDs behind location permission and exposes no raw IEs</li>
     </ul>
   </div>

@@ -16,7 +16,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 
-# No binding crate on purpose. The seven wlanapi.dll and four wevtapi.dll entry
+# No binding crate on purpose. The eight wlanapi.dll and four wevtapi.dll entry
 # points we need are declared by hand in the platform modules and the DLLs are
 # resolved at run time, because the `windows` crate drags in
 # windows-link/raw-dylib — which needs mingw's dlltool on the gnu target or the

@@ -211,14 +211,20 @@ fn push_cochannel(findings: &mut Vec<Finding>, entries: &[BssEntry], connected: 
             "channel": current.channel,
             "neighbours": neighbours.len(),
             "strong_neighbours": strong,
+            "associated_ap_channel_utilization_percent": current
+                .information_elements
+                .bss_load
+                .as_ref()
+                .map(|load| load.channel_utilization_percent),
             "top": neighbours.iter().take(5).map(|e| json!({
                 "ssid": e.ssid, "bssid": e.bssid, "rssi_dbm": e.rssi_dbm
             })).collect::<Vec<_>>()
         }),
         caveat:
             "This measures potential, not observed, contention. Nine idle neighbours cost almost \
-                 nothing while one saturated neighbour costs a lot, and channel utilization is not \
-                 parsed from the BSS Load element.",
+                 nothing while one saturated neighbour costs a lot. BSS Load utilization is \
+                 reported when advertised, but it is each AP's own view rather than an additive \
+                 channel measurement.",
     });
 }
 
@@ -434,54 +440,72 @@ fn push_sticky_client(
             "candidate_rssi_dbm": best.rssi_dbm,
             "delta_db": best.rssi_dbm - connection.rssi_dbm_estimate
         }),
-        caveat: "Roaming is decided by the driver using 802.11k neighbour reports and load data this \
-                 tool cannot see, and the stronger BSSID may be another radio of the same physical AP. \
+        caveat: "Roaming is decided by the driver using 802.11k neighbour reports and load data. \
+                 RadioChron parses advertised BSS Load when present but cannot see the driver's full \
+                 decision inputs, and the stronger BSSID may be another radio of the same physical AP. \
                  This is an observation, never an instruction to force a roam — an active transfer \
                  takes a real hit from roaming.",
     });
 }
 
 fn push_security(findings: &mut Vec<Finding>, entries: &[BssEntry], connected: Option<&BssEntry>) {
-    // A truncated beacon parses as having no RSN; require real IEs before judging.
+    // A truncated or out-of-bounds beacon parses as having no RSN; require a
+    // complete IE range before judging. The capability Privacy bit prevents a
+    // WEP network from being mislabeled as open.
     let classified: Vec<&BssEntry> = entries
         .iter()
-        .filter(|e| e.information_elements.element_count > 0)
+        .filter(|e| e.ie_data_complete && e.information_elements.element_count > 0)
         .collect();
 
     let open = classified
         .iter()
-        .filter(|e| !e.information_elements.has_rsn && !e.information_elements.has_wpa)
+        .filter(|e| {
+            !e.information_elements.has_rsn
+                && !e.information_elements.has_wpa
+                && e.capability_information & 0x0010 == 0
+        })
         .count();
-    let wpa1_only = classified
+    let legacy = classified
         .iter()
-        .filter(|e| e.information_elements.has_wpa && !e.information_elements.has_rsn)
+        .filter(|e| {
+            !e.information_elements.has_rsn
+                && (e.information_elements.has_wpa || e.capability_information & 0x0010 != 0)
+        })
         .count();
 
     let connected_insecure = connected.is_some_and(|c| {
-        c.information_elements.element_count > 0 && !c.information_elements.has_rsn
+        c.ie_data_complete
+            && c.information_elements.element_count > 0
+            && !c.information_elements.has_rsn
     });
 
-    if open == 0 && wpa1_only == 0 && !connected_insecure {
+    if open == 0 && legacy == 0 && !connected_insecure {
         return;
     }
 
     findings.push(Finding {
         id: "insecure_or_legacy_security",
-        severity: if connected_insecure { "critical" } else { "info" },
+        severity: if connected_insecure {
+            "critical"
+        } else {
+            "info"
+        },
         title: if connected_insecure {
             "Your own connection advertises no RSN".to_string()
         } else {
-            format!("{open} unprotected and {wpa1_only} legacy-WPA BSS in range")
+            format!("{open} unprotected and {legacy} legacy-security BSS in range")
         },
         detail: json!({
             "without_rsn": open,
-            "legacy_wpa_only": wpa1_only,
+            "legacy_security": legacy,
             "classified": classified.len(),
             "connected_insecure": connected_insecure
         }),
-        caveat: "Only the presence of an RSN element is known. The AKM suite list is not parsed, so \
-                 WPA2-PSK cannot be distinguished from WPA3-SAE, TKIP inside RSN is invisible, PMF \
-                 status is unknown, and an OWE (Enhanced Open) network reports as ordinary protected.",
+        caveat:
+            "RSN AKM, cipher and PMF fields are parsed when structurally complete, but Windows \
+                 may omit or truncate beacon IEs. Vendor-specific security outside WPA/WPS remains \
+                 unknown, and a Privacy bit without RSN/WPA is conservatively called legacy rather \
+                 than definitively WEP.",
     });
 }
 
@@ -543,6 +567,7 @@ mod tests {
             timestamp: 0,
             host_timestamp: 0,
             rates_mbps: vec![],
+            ie_data_complete: true,
             information_elements: ie(true, 12),
         }
     }

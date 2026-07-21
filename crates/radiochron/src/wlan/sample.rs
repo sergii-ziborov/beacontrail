@@ -21,7 +21,10 @@ pub const MIN_INTERVAL_MS: u64 = 250;
 #[derive(Debug, Serialize)]
 pub struct Sample {
     pub elapsed_ms: u128,
+    pub interface_guid: Option<String>,
     pub connected: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub collector_error: Option<String>,
     pub bssid: Option<String>,
     pub signal_quality: Option<u32>,
     pub rssi_dbm_estimate: Option<i32>,
@@ -34,9 +37,13 @@ pub struct SampleRun {
     pub duration_s: u64,
     pub interval_ms: u64,
     pub sample_count: usize,
+    pub interface_guid: Option<String>,
     pub ssid: Option<String>,
     /// Samples where the interface was not associated.
     pub disconnected_samples: usize,
+    /// Polls where state could not be observed. Kept separate from genuine
+    /// disconnected samples so collector faults do not impersonate radio drops.
+    pub failed_samples: usize,
     /// Distinct BSSIDs observed, in the order first seen.
     pub bssids_seen: Vec<String>,
     /// Transitions between BSSIDs — roaming, or an unstable choice of AP.
@@ -52,8 +59,41 @@ pub struct SampleRun {
     pub samples: Vec<Sample>,
 }
 
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct SampleProgress {
+    pub elapsed_ms: u128,
+    pub total_ms: u128,
+    pub sample_count: usize,
+}
+
 /// Sample the current association for `duration_s`, one reading per `interval_ms`.
 pub fn sample_connection(duration_s: u64, interval_ms: u64) -> anyhow::Result<SampleRun> {
+    sample_connection_on(None, duration_s, interval_ms)
+}
+
+/// Sample one interface. When no GUID is supplied, the first connected
+/// interface (or otherwise the first interface) is selected once and retained
+/// for the entire run.
+pub fn sample_connection_on(
+    interface_guid: Option<&str>,
+    duration_s: u64,
+    interval_ms: u64,
+) -> anyhow::Result<SampleRun> {
+    sample_connection_on_controlled(interface_guid, duration_s, interval_ms, |_| Ok(()))
+}
+
+/// Sampling variant for transports that support cancellation/progress. The
+/// callback runs after every observation and may stop the run by returning an
+/// error.
+pub fn sample_connection_on_controlled<F>(
+    interface_guid: Option<&str>,
+    duration_s: u64,
+    interval_ms: u64,
+    mut on_progress: F,
+) -> anyhow::Result<SampleRun>
+where
+    F: FnMut(SampleProgress) -> anyhow::Result<()>,
+{
     let duration_s = duration_s.clamp(1, MAX_DURATION_S);
     let interval_ms = interval_ms.max(MIN_INTERVAL_MS);
 
@@ -63,27 +103,82 @@ pub fn sample_connection(duration_s: u64, interval_ms: u64) -> anyhow::Result<Sa
 
     let mut samples: Vec<Sample> = Vec::new();
     let mut ssid: Option<String> = None;
+    let mut selected_guid = interface_guid.map(str::to_string);
 
     loop {
         let elapsed = started.elapsed();
-        samples.push(read_sample(elapsed, &mut ssid));
+        samples.push(read_sample(elapsed, &mut ssid, &mut selected_guid));
+        on_progress(SampleProgress {
+            elapsed_ms: started.elapsed().as_millis(),
+            total_ms: deadline.as_millis(),
+            sample_count: samples.len(),
+        })?;
 
         if started.elapsed() + interval > deadline {
             break;
         }
-        sleep(interval);
+
+        // Keep long sampling intervals cancelable. The progress callback is
+        // also the control hook used by MCP cancellation, so do not disappear
+        // into a single sleep that can last up to 60 seconds.
+        let wake_at = started.elapsed() + interval;
+        while started.elapsed() < wake_at {
+            let remaining = wake_at.saturating_sub(started.elapsed());
+            sleep(remaining.min(Duration::from_millis(250)));
+            on_progress(SampleProgress {
+                elapsed_ms: started.elapsed().as_millis(),
+                total_ms: deadline.as_millis(),
+                sample_count: samples.len(),
+            })?;
+        }
     }
 
-    Ok(summarize(duration_s, interval_ms, ssid, samples))
+    Ok(summarize(
+        duration_s,
+        interval_ms,
+        selected_guid,
+        ssid,
+        samples,
+    ))
 }
 
-fn read_sample(elapsed: Duration, ssid: &mut Option<String>) -> Sample {
-    // A transient query failure is a data point, not a reason to abort the run.
-    let connection = wifi_status()
-        .ok()
-        .and_then(|interfaces| interfaces.into_iter().find_map(|entry| entry.connection));
+fn read_sample(
+    elapsed: Duration,
+    ssid: &mut Option<String>,
+    selected_guid: &mut Option<String>,
+) -> Sample {
+    let interfaces = match wifi_status() {
+        Ok(interfaces) => interfaces,
+        Err(error) => return failed_sample(elapsed, selected_guid.clone(), error.to_string()),
+    };
 
-    match connection {
+    if selected_guid.is_none() {
+        *selected_guid = interfaces
+            .iter()
+            .find(|entry| entry.connection.is_some())
+            .or_else(|| interfaces.first())
+            .map(|entry| entry.interface.guid.clone());
+    }
+
+    let Some(interface_guid) = selected_guid.as_deref() else {
+        return failed_sample(elapsed, None, "no WLAN interfaces found".to_string());
+    };
+    let Some(interface) = interfaces
+        .into_iter()
+        .find(|entry| entry.interface.guid.eq_ignore_ascii_case(interface_guid))
+    else {
+        return failed_sample(
+            elapsed,
+            selected_guid.clone(),
+            format!("WLAN interface not found: {interface_guid}"),
+        );
+    };
+
+    if let Some(error) = interface.connection_error {
+        return failed_sample(elapsed, selected_guid.clone(), error);
+    }
+
+    match interface.connection {
         Some(connection) => {
             if ssid.is_none() {
                 ssid.clone_from(&connection.ssid);
@@ -91,7 +186,9 @@ fn read_sample(elapsed: Duration, ssid: &mut Option<String>) -> Sample {
 
             Sample {
                 elapsed_ms: elapsed.as_millis(),
+                interface_guid: selected_guid.clone(),
                 connected: true,
+                collector_error: None,
                 bssid: connection.bssid,
                 signal_quality: Some(connection.signal_quality),
                 rssi_dbm_estimate: Some(connection.rssi_dbm_estimate),
@@ -101,7 +198,9 @@ fn read_sample(elapsed: Duration, ssid: &mut Option<String>) -> Sample {
         }
         None => Sample {
             elapsed_ms: elapsed.as_millis(),
+            interface_guid: selected_guid.clone(),
             connected: false,
+            collector_error: None,
             bssid: None,
             signal_quality: None,
             rssi_dbm_estimate: None,
@@ -111,9 +210,24 @@ fn read_sample(elapsed: Duration, ssid: &mut Option<String>) -> Sample {
     }
 }
 
+fn failed_sample(elapsed: Duration, interface_guid: Option<String>, message: String) -> Sample {
+    Sample {
+        elapsed_ms: elapsed.as_millis(),
+        interface_guid,
+        connected: false,
+        collector_error: Some(message),
+        bssid: None,
+        signal_quality: None,
+        rssi_dbm_estimate: None,
+        rx_rate_kbps: None,
+        tx_rate_kbps: None,
+    }
+}
+
 fn summarize(
     duration_s: u64,
     interval_ms: u64,
+    interface_guid: Option<String>,
     ssid: Option<String>,
     samples: Vec<Sample>,
 ) -> SampleRun {
@@ -143,8 +257,16 @@ fn summarize(
         duration_s,
         interval_ms,
         sample_count: samples.len(),
+        interface_guid,
         ssid,
-        disconnected_samples: samples.iter().filter(|s| !s.connected).count(),
+        disconnected_samples: samples
+            .iter()
+            .filter(|s| !s.connected && s.collector_error.is_none())
+            .count(),
+        failed_samples: samples
+            .iter()
+            .filter(|s| s.collector_error.is_some())
+            .count(),
         bssids_seen,
         roam_count,
         rssi_min_dbm: rssi_min,
@@ -173,7 +295,9 @@ mod tests {
     fn sample(elapsed_ms: u128, bssid: Option<&str>, rssi: Option<i32>) -> Sample {
         Sample {
             elapsed_ms,
+            interface_guid: Some("guid".to_string()),
             connected: bssid.is_some(),
+            collector_error: None,
             bssid: bssid.map(str::to_string),
             signal_quality: rssi.map(|_| 70),
             rssi_dbm_estimate: rssi,
@@ -187,6 +311,7 @@ mod tests {
         let run = summarize(
             4,
             1000,
+            Some("guid".into()),
             Some("Net".into()),
             vec![
                 sample(0, Some("aa:aa:aa:aa:aa:aa"), Some(-50)),
@@ -205,6 +330,7 @@ mod tests {
         let run = summarize(
             3,
             1000,
+            Some("guid".into()),
             Some("Net".into()),
             vec![
                 sample(0, Some("aa:aa:aa:aa:aa:aa"), Some(-50)),
@@ -222,6 +348,7 @@ mod tests {
         let run = summarize(
             3,
             1000,
+            Some("guid".into()),
             None,
             vec![
                 sample(0, Some("aa:aa:aa:aa:aa:aa"), Some(-45)),
@@ -242,6 +369,7 @@ mod tests {
         let run = summarize(
             2,
             1000,
+            Some("guid".into()),
             None,
             vec![sample(0, None, None), sample(1000, None, None)],
         );

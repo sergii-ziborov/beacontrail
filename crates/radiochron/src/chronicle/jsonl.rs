@@ -11,6 +11,8 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
+use serde_json::Value;
+
 use super::{Entry, Sink};
 
 /// When and how to rotate.
@@ -42,6 +44,51 @@ pub struct JsonlSink {
     file: Option<File>,
     written: u64,
     policy: RotationPolicy,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct JsonlRead {
+    pub entries: Vec<Value>,
+    pub invalid_lines: usize,
+}
+
+/// Read the newest entries across the active file and its rotation chain,
+/// returning them in chronological order. A torn line is counted rather than
+/// hiding the rest of the durable journal.
+pub fn read_recent_jsonl(path: &Path, max_files: u32, max_entries: usize) -> io::Result<JsonlRead> {
+    let mut newest_first = Vec::new();
+    let mut invalid_lines = 0usize;
+
+    for index in 0..=max_files {
+        let candidate = if index == 0 {
+            path.to_path_buf()
+        } else {
+            rotated_name(path, index)
+        };
+        if !candidate.exists() {
+            continue;
+        }
+
+        let text = std::fs::read_to_string(candidate)?;
+        for line in text.lines().rev() {
+            if newest_first.len() >= max_entries {
+                break;
+            }
+            match serde_json::from_str::<Value>(line) {
+                Ok(entry) => newest_first.push(entry),
+                Err(_) => invalid_lines += 1,
+            }
+        }
+        if newest_first.len() >= max_entries {
+            break;
+        }
+    }
+
+    newest_first.reverse();
+    Ok(JsonlRead {
+        entries: newest_first,
+        invalid_lines,
+    })
 }
 
 impl JsonlSink {
@@ -147,6 +194,7 @@ mod tests {
         Entry {
             epoch_seconds: n as i64,
             time: format!("t{n}"),
+            interface_guid: None,
             kind: EntryKind::Disconnected {
                 last_bssid: Some(format!("aa:bb:cc:dd:ee:{n:02x}")),
             },

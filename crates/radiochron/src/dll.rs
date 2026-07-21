@@ -17,14 +17,25 @@ use std::ffi::{c_char, c_void, CStr};
 
 #[link(name = "kernel32")]
 extern "system" {
-    fn LoadLibraryW(file_name: *const u16) -> *mut c_void;
+    fn LoadLibraryExW(file_name: *const u16, file: *mut c_void, flags: u32) -> *mut c_void;
     fn GetProcAddress(module: *mut c_void, proc_name: *const c_char) -> *mut c_void;
 }
+
+/// Search only `%SystemRoot%\System32`. A bare `LoadLibraryW("name.dll")`
+/// follows the process DLL search order and can resolve an attacker-controlled
+/// file before the Windows component we intended to load.
+const LOAD_LIBRARY_SEARCH_SYSTEM32: u32 = 0x0000_0800;
 
 /// Load a system DLL by name, or `None` if it is unavailable.
 pub(crate) fn load_system_library(name: &str) -> Option<*mut c_void> {
     let wide: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
-    let module = unsafe { LoadLibraryW(wide.as_ptr()) };
+    let module = unsafe {
+        LoadLibraryExW(
+            wide.as_ptr(),
+            std::ptr::null_mut(),
+            LOAD_LIBRARY_SEARCH_SYSTEM32,
+        )
+    };
 
     if module.is_null() {
         None

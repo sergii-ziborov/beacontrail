@@ -129,6 +129,9 @@ mod tests {
                 EntryKind::Roamed { .. } => "roamed",
                 EntryKind::SignalShift { .. } => "signal_shift",
                 EntryKind::LogEvent { .. } => "log_event",
+                EntryKind::CollectorError { .. } => "collector_error",
+                EntryKind::CollectorRecovered { .. } => "collector_recovered",
+                EntryKind::HistoryGap { .. } => "history_gap",
             })
             .collect()
     }

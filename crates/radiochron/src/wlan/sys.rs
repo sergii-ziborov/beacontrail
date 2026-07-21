@@ -1,12 +1,12 @@
 //! Hand-written FFI to `wlanapi.dll`.
 //!
-//! We deliberately do not depend on the `windows` crate. We need seven
+//! We deliberately do not depend on the `windows` crate. We need eight
 //! functions and a handful of structs; the crate would pull in the
 //! `windows-link` / `raw-dylib` machinery, which on the `*-windows-gnu` target
 //! requires `dlltool.exe` from a full mingw-w64 install, and on `*-windows-msvc`
 //! requires the multi-gigabyte Visual C++ build tools plus the Windows SDK.
 //!
-//! Instead the DLL is resolved at run time through `LoadLibraryW` /
+//! Instead the DLL is resolved at run time through system32-only `LoadLibraryExW` /
 //! `GetProcAddress` (kernel32, whose import library ships with the toolchain).
 //! No import library for `wlanapi` is needed, so the crate builds with nothing
 //! but a stock `rustup` toolchain — and it degrades honestly on a machine with
@@ -39,6 +39,15 @@ pub struct Guid {
     pub data2: u16,
     pub data3: u16,
     pub data4: [u8; 8],
+}
+
+#[repr(C)]
+pub struct WlanNotificationData {
+    pub notification_source: u32,
+    pub notification_code: u32,
+    pub interface_guid: Guid,
+    pub data_size: u32,
+    pub data: *mut c_void,
 }
 
 #[repr(C)]
@@ -160,6 +169,17 @@ type WlanScanFn = unsafe extern "system" fn(
     *const c_void,
     *mut c_void,
 ) -> u32;
+pub type WlanNotificationCallback =
+    Option<unsafe extern "system" fn(*mut WlanNotificationData, *mut c_void)>;
+type WlanRegisterNotificationFn = unsafe extern "system" fn(
+    Handle,
+    u32,
+    i32,
+    WlanNotificationCallback,
+    *mut c_void,
+    *mut c_void,
+    *mut u32,
+) -> u32;
 type WlanFreeMemoryFn = unsafe extern "system" fn(*mut c_void);
 
 // Runtime DLL resolution lives in `crate::dll`, shared with the event-log
@@ -173,6 +193,7 @@ pub struct WlanApi {
     pub query_interface: WlanQueryInterfaceFn,
     pub get_network_bss_list: WlanGetNetworkBssListFn,
     pub scan: WlanScanFn,
+    pub register_notification: WlanRegisterNotificationFn,
     pub free_memory: WlanFreeMemoryFn,
 }
 
@@ -207,6 +228,7 @@ unsafe fn load() -> Option<WlanApi> {
         query_interface: sym!(c"WlanQueryInterface", WlanQueryInterfaceFn),
         get_network_bss_list: sym!(c"WlanGetNetworkBssList", WlanGetNetworkBssListFn),
         scan: sym!(c"WlanScan", WlanScanFn),
+        register_notification: sym!(c"WlanRegisterNotification", WlanRegisterNotificationFn),
         free_memory: sym!(c"WlanFreeMemory", WlanFreeMemoryFn),
     })
 }
@@ -222,6 +244,14 @@ mod tests {
         assert_eq!(std::mem::size_of::<Guid>(), 16);
         assert_eq!(std::mem::size_of::<Dot11Ssid>(), 36);
         assert_eq!(std::mem::size_of::<WlanRateSet>(), 256);
+        assert_eq!(
+            std::mem::size_of::<WlanNotificationData>(),
+            if std::mem::size_of::<usize>() == 8 {
+                40
+            } else {
+                32
+            }
+        );
         // 4-byte aligned GUID + 512-byte description + 4-byte state.
         assert_eq!(std::mem::size_of::<WlanInterfaceInfo>(), 532);
         // Contains u64 fields, so the struct is 8-byte aligned.

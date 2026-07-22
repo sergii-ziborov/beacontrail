@@ -25,6 +25,7 @@ surfaces:
 | Repository | Purpose |
 |---|---|
 | [`radiochron`](https://github.com/sergii-ziborov/radiochron) | this portable Rust engine |
+| [`radiochron-agent`](https://github.com/sergii-ziborov/radiochron-agent) | Linux/Windows daemon with offline spool, connectivity checks and MQTT/OTLP/Prometheus export |
 | [`radiochron-mcp`](https://github.com/sergii-ziborov/radiochron-mcp) | Windows MCP server built on the engine |
 | [`radiochron-js`](https://github.com/sergii-ziborov/radiochron-js) | npm launcher that ships the prebuilt MCP binary |
 | [`radiochron-site`](https://github.com/sergii-ziborov/radiochron-site) | source for [radiochron.com](https://radiochron.com) |

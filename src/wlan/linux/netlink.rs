@@ -6,13 +6,18 @@
 
 use std::ffi::c_void;
 use std::io;
-use std::os::raw::{c_int, c_short};
+use std::os::raw::c_int;
+#[cfg(feature = "scan")]
+use std::os::raw::c_short;
+#[cfg(feature = "scan")]
 use std::time::Duration;
 
 const AF_NETLINK: c_int = 16;
 const SOCK_RAW: c_int = 3;
 const NETLINK_GENERIC: c_int = 16;
+#[cfg(feature = "scan")]
 const SOL_NETLINK: c_int = 270;
+#[cfg(feature = "scan")]
 const NETLINK_ADD_MEMBERSHIP: c_int = 1;
 
 const NLM_F_REQUEST: u16 = 0x0001;
@@ -30,6 +35,7 @@ const CTRL_ATTR_MCAST_GRP_NAME: u16 = 1;
 const CTRL_ATTR_MCAST_GRP_ID: u16 = 2;
 
 const NLA_TYPE_MASK: u16 = 0x3fff;
+#[cfg(feature = "scan")]
 const POLLIN: c_short = 0x0001;
 
 #[repr(C)]
@@ -41,6 +47,7 @@ struct SockAddrNl {
 }
 
 #[repr(C)]
+#[cfg(feature = "scan")]
 struct PollFd {
     fd: c_int,
     events: c_short,
@@ -59,6 +66,7 @@ extern "C" {
         address_length: u32,
     ) -> isize;
     fn recv(fd: c_int, buffer: *mut c_void, length: usize, flags: c_int) -> isize;
+    #[cfg(feature = "scan")]
     fn setsockopt(
         fd: c_int,
         level: c_int,
@@ -66,12 +74,14 @@ extern "C" {
         value: *const c_void,
         length: u32,
     ) -> c_int;
+    #[cfg(feature = "scan")]
     fn poll(fds: *mut PollFd, count: usize, timeout_ms: c_int) -> c_int;
     fn close(fd: c_int) -> c_int;
 }
 
 #[derive(Debug, Clone)]
 pub(super) struct Message {
+    #[cfg_attr(not(feature = "scan"), allow(dead_code))]
     pub command: u8,
     pub attributes: Vec<u8>,
 }
@@ -144,6 +154,7 @@ impl GenericSocket {
         Ok(socket)
     }
 
+    #[cfg(feature = "scan")]
     pub fn subscribe_scan(&self) -> io::Result<()> {
         let group = self.scan_group.ok_or_else(|| {
             io::Error::new(
@@ -215,6 +226,7 @@ impl GenericSocket {
         self.receive_sequence(sequence, dump)
     }
 
+    #[cfg(feature = "scan")]
     pub fn receive_events(&self, timeout: Duration) -> io::Result<Vec<Message>> {
         let millis = timeout.as_millis().min(c_int::MAX as u128) as c_int;
         let mut poll_fd = PollFd {

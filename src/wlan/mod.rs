@@ -7,7 +7,7 @@ use serde::Serialize;
 
 #[cfg(feature = "analyze")]
 pub mod analyze;
-#[cfg(feature = "scan")]
+#[cfg(feature = "status")]
 pub mod bss;
 #[cfg(feature = "sample")]
 pub mod sample;

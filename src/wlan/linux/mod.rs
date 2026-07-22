@@ -2,15 +2,17 @@
 
 mod netlink;
 
+#[cfg(feature = "scan")]
 use std::collections::BTreeMap;
 use std::io;
+#[cfg(feature = "scan")]
 use std::sync::atomic::{AtomicI64, Ordering};
+#[cfg(feature = "scan")]
 use std::time::{Duration, Instant};
 
-use super::bss::{
-    band_and_channel, parse_information_elements, refresh_age, BssCollection, BssEntry,
-    BssInterfaceError, InformationElements, ScanInterfaceResult, ScanRefresh,
-};
+use super::bss::{band_and_channel, parse_information_elements, BssEntry, InformationElements};
+#[cfg(feature = "scan")]
+use super::bss::{refresh_age, BssCollection, BssInterfaceError, ScanInterfaceResult, ScanRefresh};
 use super::{mac_to_string, quality_from_rssi, CurrentConnection, WifiStatus, WlanInterface};
 use netlink::{attributes, push_attribute, push_u32, read_u16, read_u32, read_u64, GenericSocket};
 
@@ -18,8 +20,11 @@ use netlink::{attributes, push_attribute, push_u32, read_u16, read_u32, read_u64
 const CMD_GET_INTERFACE: u8 = 5;
 const CMD_GET_STATION: u8 = 17;
 const CMD_GET_SCAN: u8 = 32;
+#[cfg(feature = "scan")]
 const CMD_TRIGGER_SCAN: u8 = 33;
+#[cfg(feature = "scan")]
 const CMD_NEW_SCAN_RESULTS: u8 = 34;
+#[cfg(feature = "scan")]
 const CMD_SCAN_ABORTED: u8 = 35;
 
 const ATTR_IFINDEX: u16 = 3;
@@ -27,8 +32,10 @@ const ATTR_IFNAME: u16 = 4;
 const ATTR_IFTYPE: u16 = 5;
 const ATTR_MAC: u16 = 6;
 const ATTR_STA_INFO: u16 = 21;
+#[cfg(feature = "scan")]
 const ATTR_SCAN_SSIDS: u16 = 45;
 const ATTR_BSS: u16 = 47;
+#[cfg(feature = "scan")]
 const NLA_F_NESTED: u16 = 0x8000;
 
 const BSS_BSSID: u16 = 1;
@@ -51,6 +58,7 @@ const STA_INFO_RX_BITRATE: u16 = 14;
 const RATE_INFO_BITRATE: u16 = 1;
 const RATE_INFO_BITRATE32: u16 = 5;
 
+#[cfg(feature = "scan")]
 static LAST_REFRESH_EPOCH: AtomicI64 = AtomicI64::new(0);
 
 #[derive(Debug, Clone)]
@@ -113,6 +121,7 @@ pub fn wifi_status() -> anyhow::Result<Vec<WifiStatus>> {
     Ok(output)
 }
 
+#[cfg(feature = "scan")]
 pub fn request_scan() -> anyhow::Result<usize> {
     let mut socket = GenericSocket::open()?;
     let interfaces = interfaces(&mut socket)?;
@@ -122,6 +131,7 @@ pub fn request_scan() -> anyhow::Result<usize> {
         .count())
 }
 
+#[cfg(feature = "scan")]
 pub fn scan_and_wait(timeout: Duration) -> anyhow::Result<ScanRefresh> {
     let started = Instant::now();
     let mut commands = GenericSocket::open()?;
@@ -207,14 +217,17 @@ pub fn scan_and_wait(timeout: Duration) -> anyhow::Result<ScanRefresh> {
     })
 }
 
+#[cfg(feature = "scan")]
 pub fn last_refresh_age_seconds() -> Option<u64> {
     refresh_age(&LAST_REFRESH_EPOCH)
 }
 
+#[cfg(feature = "scan")]
 pub fn bss_list() -> anyhow::Result<Vec<BssEntry>> {
     Ok(bss_list_detailed()?.entries)
 }
 
+#[cfg(feature = "scan")]
 pub fn bss_list_detailed() -> anyhow::Result<BssCollection> {
     let mut socket = GenericSocket::open()?;
     let interfaces = interfaces(&mut socket)?;
@@ -269,6 +282,7 @@ fn interfaces(socket: &mut GenericSocket) -> io::Result<Vec<Interface>> {
     Ok(output)
 }
 
+#[cfg(feature = "scan")]
 fn trigger_scan(socket: &mut GenericSocket, ifindex: u32) -> io::Result<()> {
     let mut request = Vec::new();
     push_u32(&mut request, ATTR_IFINDEX, ifindex);
@@ -514,6 +528,7 @@ fn interface_state(interface_type: u32) -> &'static str {
     }
 }
 
+#[cfg(feature = "scan")]
 fn error_code(error: &io::Error) -> Option<u32> {
     error.raw_os_error().map(i32::unsigned_abs)
 }

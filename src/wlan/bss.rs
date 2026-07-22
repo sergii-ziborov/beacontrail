@@ -6,34 +6,35 @@
 //! PowerShell `Add-Type`. Here the same call is plain FFI, and the IE walk —
 //! which was already raw-byte logic in that C# — becomes a safe slice walk.
 
+#[cfg(feature = "scan")]
 use std::sync::atomic::{AtomicI64, Ordering};
-#[cfg(windows)]
+#[cfg(all(windows, feature = "scan"))]
 use std::sync::{Condvar, Mutex};
-#[cfg(windows)]
+#[cfg(all(windows, feature = "scan"))]
 use std::time::Duration;
-#[cfg(windows)]
+#[cfg(all(windows, feature = "scan"))]
 use std::time::Instant;
 
 use serde::Serialize;
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "scan"))]
 use super::sys::{self, Guid, WlanBssEntry, WlanBssList};
-#[cfg(windows)]
+#[cfg(all(windows, feature = "scan"))]
 use super::{mac_to_string, phy_type, ssid_to_string, WlanAllocation, WlanClient};
 
 /// IEEE 802.11 management-frame body ceiling used by Windows for a BSS entry.
-#[cfg(windows)]
+#[cfg(all(windows, feature = "scan"))]
 const MAX_IE_BYTES: usize = 2324;
-#[cfg(windows)]
+#[cfg(all(windows, feature = "scan"))]
 const WLAN_NOTIFICATION_SOURCE_NONE: u32 = 0;
-#[cfg(windows)]
+#[cfg(all(windows, feature = "scan"))]
 const WLAN_NOTIFICATION_SOURCE_ACM: u32 = 0x0000_0008;
-#[cfg(windows)]
+#[cfg(all(windows, feature = "scan"))]
 const WLAN_NOTIFICATION_ACM_SCAN_COMPLETE: u32 = 7;
-#[cfg(windows)]
+#[cfg(all(windows, feature = "scan"))]
 const WLAN_NOTIFICATION_ACM_SCAN_FAIL: u32 = 8;
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "scan"))]
 static LAST_REFRESH_EPOCH: AtomicI64 = AtomicI64::new(0);
 
 #[derive(Debug, Serialize)]
@@ -76,13 +77,13 @@ pub struct BssInterfaceError {
     pub error_code: u32,
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "scan"))]
 pub use super::linux::{
     bss_list, bss_list_detailed, last_refresh_age_seconds, request_scan, scan_and_wait,
 };
 
 #[derive(Clone, Copy)]
-#[cfg(windows)]
+#[cfg(all(windows, feature = "scan"))]
 enum ScanState {
     Pending,
     Complete,
@@ -90,7 +91,7 @@ enum ScanState {
     Rejected(u32),
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "scan"))]
 struct ScanWaitState {
     interfaces: Mutex<Vec<(Guid, ScanState)>>,
     changed: Condvar,
@@ -281,6 +282,7 @@ fn security_label(entry: &BssEntry) -> String {
 ///
 /// 6 GHz uses its own numbering (channel 1 is centred at 5955 MHz), which is why
 /// it cannot share the 5 GHz formula.
+#[cfg(any(target_os = "linux", feature = "scan"))]
 pub(crate) fn band_and_channel(center_khz: u32) -> (&'static str, Option<u16>) {
     let mhz = center_khz / 1000;
 
@@ -300,7 +302,7 @@ pub(crate) fn band_and_channel(center_khz: u32) -> (&'static str, Option<u16>) {
 ///
 /// Results are not immediate: Windows raises a scan-complete notification a few
 /// seconds later, after which [`bss_list`] returns refreshed entries.
-#[cfg(windows)]
+#[cfg(all(windows, feature = "scan"))]
 pub fn request_scan() -> anyhow::Result<usize> {
     let client = WlanClient::open()?;
     let guids = super::interface_guids(&client)?;
@@ -312,7 +314,7 @@ pub fn request_scan() -> anyhow::Result<usize> {
 
 /// Request a scan and wait for Windows' per-interface completion/failure
 /// notifications instead of sleeping for an assumed driver latency.
-#[cfg(windows)]
+#[cfg(all(windows, feature = "scan"))]
 pub fn scan_and_wait(timeout: Duration) -> anyhow::Result<ScanRefresh> {
     let started = Instant::now();
     let client = WlanClient::open()?;
@@ -411,17 +413,18 @@ pub fn scan_and_wait(timeout: Duration) -> anyhow::Result<ScanRefresh> {
 
 /// Age of the last scan completion observed by this process. `None` means the
 /// current cache provenance is unknown, not that it is fresh.
-#[cfg(windows)]
+#[cfg(all(windows, feature = "scan"))]
 pub fn last_refresh_age_seconds() -> Option<u64> {
     refresh_age(&LAST_REFRESH_EPOCH)
 }
 
+#[cfg(feature = "scan")]
 pub(crate) fn refresh_age(last_refresh_epoch: &AtomicI64) -> Option<u64> {
     let then = last_refresh_epoch.load(Ordering::Relaxed);
     (then > 0).then(|| crate::time::now_epoch_seconds().saturating_sub(then).max(0) as u64)
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "scan"))]
 fn request_for_interfaces(client: &WlanClient, guids: &[Guid]) -> Vec<(Guid, u32)> {
     let Ok(api) = sys::api() else {
         return guids.iter().copied().map(|guid| (guid, u32::MAX)).collect();
@@ -444,7 +447,7 @@ fn request_for_interfaces(client: &WlanClient, guids: &[Guid]) -> Vec<(Guid, u32
         .collect()
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "scan"))]
 unsafe extern "system" fn scan_notification(
     notification: *mut sys::WlanNotificationData,
     context: *mut core::ffi::c_void,
@@ -485,12 +488,12 @@ unsafe extern "system" fn scan_notification(
     state.changed.notify_all();
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "scan"))]
 struct NotificationRegistration<'a> {
     client: &'a WlanClient,
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "scan"))]
 impl Drop for NotificationRegistration<'_> {
     fn drop(&mut self) {
         if let Ok(api) = sys::api() {
@@ -510,13 +513,13 @@ impl Drop for NotificationRegistration<'_> {
 }
 
 /// Enumerate the cached BSS list for every WLAN interface.
-#[cfg(windows)]
+#[cfg(all(windows, feature = "scan"))]
 pub fn bss_list() -> anyhow::Result<Vec<BssEntry>> {
     Ok(bss_list_detailed()?.entries)
 }
 
 /// Enumerate cached BSS entries while preserving per-interface failures.
-#[cfg(windows)]
+#[cfg(all(windows, feature = "scan"))]
 pub fn bss_list_detailed() -> anyhow::Result<BssCollection> {
     let client = WlanClient::open()?;
     let mut out = Vec::new();
@@ -534,7 +537,7 @@ pub fn bss_list_detailed() -> anyhow::Result<BssCollection> {
     })
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "scan"))]
 fn collect_for_interface(
     handle: sys::Handle,
     guid: &Guid,
@@ -603,7 +606,7 @@ fn collect_for_interface(
 /// # Safety
 /// `entry` must point into a live `WLAN_BSS_LIST` allocation, because the IE
 /// bytes live at `entry + ie_offset` inside that same allocation.
-#[cfg(windows)]
+#[cfg(all(windows, feature = "scan"))]
 unsafe fn read_entry(
     entry: &WlanBssEntry,
     interface_guid: &str,
@@ -651,7 +654,7 @@ unsafe fn read_entry(
     }
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "scan"))]
 fn checked_ie_range(
     allocation_start: usize,
     allocation_len: usize,
@@ -674,7 +677,7 @@ fn checked_ie_range(
         .then_some((ie_start, ie_size))
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "scan"))]
 fn bss_type(value: i32) -> String {
     match value {
         1 => "infrastructure",
@@ -686,7 +689,7 @@ fn bss_type(value: i32) -> String {
 }
 
 /// Rates are stored in 0.5 Mbps units; bit 15 is the "basic rate" flag.
-#[cfg(windows)]
+#[cfg(all(windows, feature = "scan"))]
 fn decode_rates(rate_set: &[u16], len: u32) -> Vec<f64> {
     let len = (len as usize).min(rate_set.len());
     rate_set[..len]

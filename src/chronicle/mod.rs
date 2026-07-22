@@ -15,8 +15,8 @@
 //!   observations into entries. No OS calls, so it is testable without a radio
 //!   and portable to collectors that do not exist yet.
 //! - [`Collector`] / [`Recorder`] — portable collection contract and loop. The
-//!   bundled adapter uses WLAN API on Windows and nl80211 on Linux; Windows can
-//!   additionally tail the WLAN event log for reason codes.
+//!   bundled adapter uses WLAN API on Windows, nl80211 on Linux, and CoreWLAN
+//!   on macOS; Windows can additionally tail the WLAN event log for reason codes.
 //!
 //! # Why a module and not a `radiochron-history` crate
 //!
@@ -43,7 +43,10 @@ use serde::{Deserialize, Serialize};
 pub use detect::{ChangeDetector, Observation};
 pub use jsonl::{read_recent_jsonl, JsonlRead, JsonlSink, RotationPolicy};
 
-#[cfg(all(any(windows, target_os = "linux"), feature = "status"))]
+#[cfg(all(
+    any(windows, target_os = "linux", target_os = "macos"),
+    feature = "status"
+))]
 pub use recorder::NativeCollector;
 pub use recorder::{
     Collector, CollectorEvent, CollectorFailure, CollectorSample, Recorder, RecorderOptions,

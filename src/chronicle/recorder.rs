@@ -5,9 +5,15 @@ use std::time::Duration;
 
 use super::{ChangeDetector, ChronicleIdentity, Entry, EntryKind, Observation, Sink};
 
-#[cfg(all(any(windows, target_os = "linux"), feature = "status"))]
+#[cfg(all(
+    any(windows, target_os = "linux", target_os = "macos"),
+    feature = "status"
+))]
 mod native;
-#[cfg(all(any(windows, target_os = "linux"), feature = "status"))]
+#[cfg(all(
+    any(windows, target_os = "linux", target_os = "macos"),
+    feature = "status"
+))]
 pub use native::NativeCollector;
 
 #[derive(Debug, Clone)]
@@ -260,7 +266,10 @@ impl<S: Sink, C: Collector> Recorder<S, C> {
     }
 }
 
-#[cfg(all(any(windows, target_os = "linux"), feature = "status"))]
+#[cfg(all(
+    any(windows, target_os = "linux", target_os = "macos"),
+    feature = "status"
+))]
 impl<S: Sink> Recorder<S, NativeCollector> {
     pub fn new(sink: S, options: RecorderOptions) -> Self {
         Self::with_collector(sink, NativeCollector::default(), options)

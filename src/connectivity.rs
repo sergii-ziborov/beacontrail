@@ -21,7 +21,8 @@ pub struct ConnectivityConfig {
     /// Explicit external endpoint proving Internet reachability.
     pub internet_target: Option<String>,
     /// HTTP endpoint with a known status, commonly a local 204 endpoint. Core
-    /// handles `http://`; the agent upgrades `https://` through rustls.
+    /// handles `http://`; a transport crate can add HTTPS without coupling TLS
+    /// dependencies to core.
     pub captive_portal_url: Option<String>,
     pub captive_portal_expected_status: u16,
     /// TLS service in `host:port` form. The core delegates certificate
@@ -127,7 +128,7 @@ pub fn diagnose(config: &ConnectivityConfig) -> ConnectivityReport {
     })
 }
 
-/// Diagnose with a transport-owned TLS verifier. The agent supplies rustls;
+/// Diagnose with a transport-owned TLS verifier. The agent supplies system TLS;
 /// embedded users can supply their platform TLS stack without changing core.
 pub fn diagnose_with_tls<F>(config: &ConnectivityConfig, tls_probe: F) -> ConnectivityReport
 where

@@ -2,16 +2,14 @@ use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use esp_idf_svc::hal::task::block_on;
 use esp32_nimble::enums::AdvType;
 use esp32_nimble::{
     BLEAddress, BLEAddressType, BLEAdvertisedData, BLEAdvertisedDevice, BLEDevice, BLEError,
     BLEScan,
 };
+use esp_idf_svc::hal::task::block_on;
 
-use radiochron::ble::{
-    AddressType, Advertisement, ManufacturerData, ServiceData,
-};
+use radiochron::ble::{AddressType, Advertisement, ManufacturerData, ServiceData};
 
 use super::BleDriver;
 
@@ -47,14 +45,13 @@ impl BleDriver for NimbleBleDriver {
     type Error = BLEError;
 
     fn scan(&mut self, output: &mut Vec<Advertisement>) -> Result<(), Self::Error> {
-        block_on(self.scan.start(
-            self.device,
-            self.duration_ms,
-            |device, data| {
-                output.push(map_advertisement(device, &data));
-                None::<()>
-            },
-        ))
+        block_on(
+            self.scan
+                .start(self.device, self.duration_ms, |device, data| {
+                    output.push(map_advertisement(device, &data));
+                    None::<()>
+                }),
+        )
         .map(|_| ())
     }
 }
@@ -95,10 +92,7 @@ fn map_advertisement(
             device.adv_type(),
             AdvType::Ind | AdvType::DirectInd
         )),
-        service_uuids: data
-            .service_uuids()
-            .map(|uuid| uuid.to_string())
-            .collect(),
+        service_uuids: data.service_uuids().map(|uuid| uuid.to_string()).collect(),
         manufacturer_data,
         service_data,
         protocol_identity: None,
@@ -108,13 +102,11 @@ fn map_advertisement(
 fn address_type(address: &BLEAddress) -> AddressType {
     match address.addr_type() {
         BLEAddressType::Public | BLEAddressType::PublicID => AddressType::Public,
-        BLEAddressType::Random | BLEAddressType::RandomID => {
-            match address.as_be_bytes()[0] >> 6 {
-                0b11 => AddressType::RandomStatic,
-                0b01 => AddressType::ResolvablePrivate,
-                0b00 => AddressType::NonResolvablePrivate,
-                _ => AddressType::Unknown,
-            }
-        }
+        BLEAddressType::Random | BLEAddressType::RandomID => match address.as_be_bytes()[0] >> 6 {
+            0b11 => AddressType::RandomStatic,
+            0b01 => AddressType::ResolvablePrivate,
+            0b00 => AddressType::NonResolvablePrivate,
+            _ => AddressType::Unknown,
+        },
     }
 }

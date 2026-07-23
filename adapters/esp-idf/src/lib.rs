@@ -277,6 +277,9 @@ mod tests {
         let mut snapshot = BleSnapshot::new();
         BleCollector::scan(&mut collector, &mut snapshot.advertisements).unwrap();
 
-        assert_eq!(snapshot.advertisements[0].local_name.as_deref(), Some("tag"));
+        assert_eq!(
+            snapshot.advertisements[0].local_name.as_deref(),
+            Some("tag")
+        );
     }
 }

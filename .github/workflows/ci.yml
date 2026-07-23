@@ -29,7 +29,7 @@ jobs:
         shell: pwsh
         run: |
           cargo clippy --no-default-features -- -D warnings
-          $features = @('std', 'embedded', 'status', 'scan', 'analyze', 'sample', 'history', 'record')
+          $features = @('std', 'embedded', 'ble', 'status', 'scan', 'analyze', 'sample', 'history', 'record')
           foreach ($feature in $features) {
             cargo clippy --no-default-features --features $feature -- -D warnings
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -103,6 +103,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Bare-metal no_std build
         run: cargo check --target thumbv7em-none-eabihf --no-default-features --features embedded
+      - name: Bare-metal BLE model and tracker
+        run: cargo check --target thumbv7em-none-eabihf --no-default-features --features embedded,ble
       - name: Portable code lint
         run: cargo clippy --no-default-features --features embedded -- -D warnings
       - name: Embedded API docs
@@ -118,7 +120,7 @@ jobs:
           cargo clippy --manifest-path adapters/esp-idf/Cargo.toml --all-targets -- -D warnings
           cargo test --manifest-path adapters/esp-idf/Cargo.toml
       - name: Inspect ESP-IDF adapter package
-        # Full verification becomes possible after radiochron 0.3.0 is on crates.io.
+        # Full verification becomes possible after the matching radiochron release reaches crates.io.
         run: cargo package --manifest-path adapters/esp-idf/Cargo.toml --list
 
   esp-idf:

@@ -14,9 +14,7 @@ use alloc::vec::Vec;
 
 use radiochron::embedded::{bss_entry, Collector};
 use radiochron::wlan::bss::{BssEntry, SecurityMode};
-use radiochron::wlan::{
-    quality_from_rssi, CurrentConnection, WifiStatus, WlanInterface,
-};
+use radiochron::wlan::{quality_from_rssi, CurrentConnection, WifiStatus, WlanInterface};
 
 #[cfg(target_os = "espidf")]
 mod native;

@@ -3,6 +3,8 @@
 //! Time and durability are application-owned. The public facade keeps the
 //! schema, metrics, change detector and recorder as separate internal modules.
 
+#[cfg(feature = "ble")]
+mod ble;
 mod detect;
 mod metrics;
 mod recorder;

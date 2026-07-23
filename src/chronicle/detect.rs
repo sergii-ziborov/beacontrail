@@ -134,6 +134,10 @@ mod tests {
                 EntryKind::HistoryGap { .. } => "history_gap",
                 #[cfg(feature = "connectivity")]
                 EntryKind::Connectivity { .. } => "connectivity",
+                #[cfg(feature = "ble")]
+                EntryKind::BleObservation { .. } => "ble_observation",
+                #[cfg(feature = "ble")]
+                EntryKind::BleFinding { .. } => "ble_finding",
             })
             .collect()
     }

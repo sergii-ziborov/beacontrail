@@ -8,6 +8,16 @@
 
 extern crate alloc;
 
+#[cfg(feature = "ble")]
+mod ble;
+#[cfg(all(feature = "nimble", target_os = "espidf"))]
+mod native_ble;
+
+#[cfg(feature = "ble")]
+pub use ble::{BleDriver, EspIdfBleCollector};
+#[cfg(all(feature = "nimble", target_os = "espidf"))]
+pub use native_ble::NimbleBleDriver;
+
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -166,6 +176,10 @@ fn format_bssid(bssid: [u8; 6]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "ble")]
+    use radiochron::ble::{
+        AddressType, Advertisement, Collector as BleCollector, Snapshot as BleSnapshot,
+    };
     use radiochron::embedded::Snapshot;
 
     #[derive(Default)]
@@ -232,5 +246,37 @@ mod tests {
         assert_eq!(channel_frequency_khz(1), 2_412_000);
         assert_eq!(channel_frequency_khz(14), 2_484_000);
         assert_eq!(channel_frequency_khz(36), 5_180_000);
+    }
+
+    #[cfg(feature = "ble")]
+    #[test]
+    fn ble_collector_reuses_the_core_snapshot() {
+        struct MockBleDriver;
+
+        impl BleDriver for MockBleDriver {
+            type Error = core::convert::Infallible;
+
+            fn scan(&mut self, output: &mut Vec<Advertisement>) -> Result<(), Self::Error> {
+                output.push(Advertisement {
+                    address: "aa".into(),
+                    address_type: AddressType::RandomStatic,
+                    local_name: Some("tag".into()),
+                    rssi_dbm: -50,
+                    tx_power_dbm: None,
+                    connectable: Some(false),
+                    service_uuids: alloc::vec![],
+                    manufacturer_data: alloc::vec![],
+                    service_data: alloc::vec![],
+                    protocol_identity: None,
+                });
+                Ok(())
+            }
+        }
+
+        let mut collector = EspIdfBleCollector::new(MockBleDriver);
+        let mut snapshot = BleSnapshot::new();
+        BleCollector::scan(&mut collector, &mut snapshot.advertisements).unwrap();
+
+        assert_eq!(snapshot.advertisements[0].local_name.as_deref(), Some("tag"));
     }
 }

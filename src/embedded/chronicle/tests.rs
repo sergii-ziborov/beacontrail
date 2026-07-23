@@ -124,3 +124,49 @@ fn disabling_expectation_removes_sleep_from_the_denominator() {
     assert_eq!(metrics.expected_wifi_connected_ms, 2000);
     assert_eq!(metrics.connectivity_uptime_permille, Some(1000));
 }
+
+#[cfg(feature = "ble")]
+#[test]
+fn ble_observations_and_findings_use_the_same_envelope() {
+    use crate::ble::{AddressType, Advertisement, RiskKind, SensorContext, Tracker, TrackerPolicy};
+
+    let mut chronicle = recorder();
+    let mut tracker = Tracker::new(TrackerPolicy {
+        persistent_unknown_ms: 0,
+        ..TrackerPolicy::default()
+    });
+    let result = chronicle
+        .observe_ble(
+            SensorContext {
+                sensor_id: "ble0".into(),
+                zone: None,
+                movement_session: None,
+                sensor_is_moving: false,
+            },
+            Advertisement {
+                address: "aa".into(),
+                address_type: AddressType::RandomStatic,
+                local_name: None,
+                rssi_dbm: -55,
+                tx_power_dbm: None,
+                connectable: None,
+                service_uuids: alloc::vec![],
+                manufacturer_data: alloc::vec![],
+                service_data: alloc::vec![],
+                protocol_identity: None,
+            },
+            &mut tracker,
+        )
+        .unwrap();
+
+    assert_eq!(result.findings[0].kind, RiskKind::PersistentUnknown);
+    assert_eq!(chronicle.sink().0.len(), 2);
+    assert!(matches!(
+        chronicle.sink().0[0].event,
+        EventKind::BleObservation { .. }
+    ));
+    assert!(matches!(
+        chronicle.sink().0[1].event,
+        EventKind::BleFinding { .. }
+    ));
+}

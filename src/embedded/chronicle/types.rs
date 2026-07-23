@@ -112,6 +112,17 @@ pub enum EventKind {
     Metrics {
         snapshot: MetricsSnapshot,
     },
+    #[cfg(feature = "ble")]
+    BleObservation {
+        sensor_id: String,
+        identity: crate::ble::Identity,
+        payload_hash: String,
+        rssi_dbm: i16,
+    },
+    #[cfg(feature = "ble")]
+    BleFinding {
+        finding: crate::ble::Finding,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

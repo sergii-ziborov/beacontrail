@@ -1,6 +1,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
-//! Wi-Fi diagnostics: native collectors and 802.11 beacon analysis.
+//! Wi-Fi diagnostics and portable Bluetooth LE observation history.
 //!
 //! This is the library. It has no notion of MCP, of JSON-RPC, or of any
 //! transport — that lives in the `radiochron-mcp` crate, which depends on this
@@ -30,6 +30,7 @@
 //! | BSS list with raw IEs | native | nl80211 | CoreWLAN | firmware adapter |
 //! | analysis | yes | yes | yes | yes (`no_std + alloc`) |
 //! | connection history | yes | no equivalent | no equivalent | caller-owned |
+//! | BLE history/risk engine | adapter input | adapter input | adapter input | yes |
 //!
 //! Connection history depends on the WLAN AutoConfig event log, which has no
 //! counterpart on Linux or macOS. Callers must treat it as an optional
@@ -40,13 +41,13 @@
 //! Hosted target:
 //!
 //! ```toml
-//! radiochron = { version = "0.3", default-features = false, features = ["status"] }
+//! radiochron = { version = "0.4", default-features = false, features = ["status"] }
 //! ```
 //!
 //! Bare-metal target with a global allocator:
 //!
 //! ```toml
-//! radiochron = { version = "0.3", default-features = false, features = ["embedded"] }
+//! radiochron = { version = "0.4", default-features = false, features = ["embedded"] }
 //! ```
 //!
 //! `std` (host runtime) · `embedded` (`no_std + alloc` firmware adapter, IE
@@ -54,6 +55,8 @@
 //! (findings) · `sample` (dynamics over a window) · `history` (reading the OS
 //! event log) · `record` (writing our own — the `chronicle`) · `connectivity`
 //! (radio-to-Internet diagnosis with caller-supplied targets).
+//! `ble` is separately opt-in and provides portable advertisements, protocol
+//! identities, history and evidence-based detectors without `std`.
 //!
 //! Reading history and writing it are deliberately separate features: `history`
 //! reads what Windows already recorded, while `record` keeps a chronicle of our
@@ -63,6 +66,9 @@
 //! collector touches an operating-system API.
 
 extern crate alloc;
+
+#[cfg(feature = "ble")]
+pub mod ble;
 
 #[cfg(any(feature = "record", feature = "embedded"))]
 mod schema;

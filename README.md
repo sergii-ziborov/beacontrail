@@ -2,8 +2,9 @@
 
 **[radiochron.com](https://radiochron.com)** · the chronicle of your radio.
 
-A pure-Rust Wi-Fi diagnostics library: native WLAN collectors, 802.11 beacon
-analysis, connection-history verdicts, and a change-only recorder. No
+A pure-Rust radio diagnostics library: native WLAN collectors, 802.11 beacon
+analysis, connection-history verdicts, portable BLE history/risk detectors,
+and a change-only recorder. No
 PowerShell, no `netsh` text scraping, no embedded C#, no `.NET` — and **no build
 toolchain beyond a stock [`rustup`](https://rustup.rs)**.
 
@@ -14,7 +15,7 @@ crate and nothing else.
 
 ```toml
 [dependencies]
-radiochron = "0.3"
+radiochron = "0.4"
 ```
 
 ## Repository family
@@ -52,13 +53,14 @@ Features are granular so a hosted sensor that only needs association state and
 link strength takes `status` and nothing else:
 
 ```toml
-radiochron = { version = "0.3", default-features = false, features = ["status"] }
+radiochron = { version = "0.4", default-features = false, features = ["status"] }
 ```
 
 | Feature | Enables | Depends on |
 |---|---|---|
 | `std` | Hosted runtime used by OS, clock, filesystem and network integrations | — |
 | `embedded` | `no_std + alloc` firmware adapter, WLAN models, IE parser, findings, chronicle and metrics | — |
+| `ble` | `no_std + alloc` BLE advertisements, iBeacon/Eddystone identity, history and risk evidence | â€” |
 | `status`  | Interface enumeration + current-connection attributes ([`wlan::wifi_status`]) | `std` |
 | `scan`    | Nearby BSS list with raw 802.11 IE parsing ([`wlan::bss`]) | `status` |
 | `analyze` | The findings engine ([`wlan::analyze`]) | `scan` |
@@ -98,7 +100,7 @@ BSS lists and structured findings, but it does not use `std`, threads, files,
 sockets or an OS collector:
 
 ```toml
-radiochron = { version = "0.3", default-features = false, features = ["embedded"] }
+radiochron = { version = "0.4", default-features = false, features = ["embedded"] }
 ```
 
 Implement [`embedded::Collector`] over the callbacks exposed by ESP-IDF,
@@ -156,6 +158,35 @@ association attempts, disconnect/roam counts, RSSI min/max/mean, disconnect
 reason, backend successes/failures and time-to-associate/IP/backend. Sleep can
 be excluded from the uptime denominator through `set_connectivity_expected`.
 See [`examples/embedded_chronicle.rs`](examples/embedded_chronicle.rs).
+
+## Bluetooth LE history and risk evidence
+
+Enable `ble` alone for a portable `no_std + alloc` BLE engine, or combine it
+with `embedded` to write BLE observations and findings through the same
+versioned Chronicle envelope:
+
+```toml
+radiochron = { version = "0.4", default-features = false, features = ["ble"] }
+```
+
+[`ble::Collector`] accepts advertisements from an OS, firmware SDK or external
+scanner. [`ble::Tracker`] keeps first/last seen, dwell, recurrence, RSSI range,
+sensor count and moving-session count. It detects configured persistent
+unknowns, co-travel across caller-defined movement sessions, disappearance of
+expected devices, concurrent strong identities in distinct zones, and beacon
+floods. Allowlisted identities suppress unknown/co-travel findings.
+
+iBeacon and Eddystone UID are decoded into identities that survive address
+rotation. A protocol adapter may supply another stable identity; otherwise
+public/static addresses are treated as address identities and private/random
+addresses as ephemeral. Raw addresses and payloads are deliberately absent
+from Chronicle events; only an opaque identity key and payload fingerprint are
+recorded.
+
+These are evidence rules, not danger declarations. RSSI is not distance,
+persistence alone is not tracking, co-travel requires a moving sensor (or
+multiple correctly labelled sessions), and clone evidence requires a decoded
+or caller-supplied strong identity plus trustworthy sensor zones/clocks.
 
 ## Collect
 
@@ -289,7 +320,8 @@ log; the portable chronicle is the durable history on IoT devices.
 SSIDs, BSSIDs, MAC addresses and event logs are sensitive. This library is
 local-first, has no telemetry, and transmits nothing off the machine. Only run
 scans against networks you own or are authorized to test. It is not a packet
-sniffer, a geolocation system, or offensive Wi-Fi tooling.
+sniffer, a geolocation system, or offensive radio tooling. BLE identity keys
+are deterministic fingerprints, not cryptographic anonymization guarantees.
 
 ## crates.io release
 

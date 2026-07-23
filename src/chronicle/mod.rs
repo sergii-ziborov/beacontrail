@@ -199,6 +199,18 @@ pub enum EntryKind {
     Connectivity {
         report: Box<crate::connectivity::ConnectivityReport>,
     },
+    /// A privacy-minimized BLE sighting. Raw advertisement addresses and
+    /// payloads are intentionally excluded from the chronicle.
+    #[cfg(feature = "ble")]
+    BleObservation {
+        sensor_id: String,
+        identity: crate::ble::Identity,
+        payload_hash: String,
+        rssi_dbm: i16,
+    },
+    /// Evidence-based BLE detector output with its limitations attached.
+    #[cfg(feature = "ble")]
+    BleFinding { finding: crate::ble::Finding },
 }
 
 static PROCESS_SEQUENCE: AtomicU64 = AtomicU64::new(1);

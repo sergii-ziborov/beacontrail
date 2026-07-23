@@ -1,19 +1,25 @@
 [package]
 name = "radiochron-esp-idf"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-rust-version = "1.82"
-description = "ESP-IDF Wi-Fi collector adapter for the RadioChron diagnostics core"
+rust-version = "1.85"
+description = "ESP-IDF Wi-Fi and optional NimBLE collector adapter for the RadioChron diagnostics core"
 license = "MIT"
 repository = "https://github.com/sergii-ziborov/radiochron"
 readme = "README.md"
-keywords = ["esp32", "esp-idf", "wifi", "diagnostics", "embedded"]
+keywords = ["esp32", "esp-idf", "wifi", "bluetooth", "embedded"]
 categories = ["embedded", "network-programming"]
 
 [dependencies]
-radiochron = { version = "0.3.0", path = "../..", default-features = false, features = ["embedded"] }
+radiochron = { version = "0.4.0", path = "../..", default-features = false, features = ["embedded"] }
+
+[features]
+default = []
+ble = ["radiochron/ble"]
+nimble = ["ble", "dep:esp32-nimble"]
 
 [target.'cfg(target_os = "espidf")'.dependencies]
 embedded-svc = { version = "0.29", default-features = false, features = ["std"] }
 enumset = { version = "1", default-features = false }
 esp-idf-svc = { version = "0.52.1", default-features = false, features = ["std"] }
+esp32-nimble = { version = "0.12.0", default-features = false, features = ["std"], optional = true }

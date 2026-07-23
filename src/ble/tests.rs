@@ -149,3 +149,14 @@ fn flood_detector_counts_unique_identities_inside_window() {
         .iter()
         .any(|finding| finding.kind == RiskKind::BeaconFlood));
 }
+
+#[test]
+fn policy_deserializes_as_a_partial_configuration() {
+    let policy: TrackerPolicy = serde_json::from_str(r#"{"persistent_unknown_ms":25}"#).unwrap();
+
+    assert_eq!(policy.persistent_unknown_ms, 25);
+    assert_eq!(
+        policy.co_travel_min_sessions,
+        TrackerPolicy::default().co_travel_min_sessions
+    );
+}

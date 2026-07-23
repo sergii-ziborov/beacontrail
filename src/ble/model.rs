@@ -141,6 +141,7 @@ pub struct ObservationResult {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct TrackerPolicy {
     pub persistent_unknown_ms: u64,
     pub co_travel_min_sessions: usize,
